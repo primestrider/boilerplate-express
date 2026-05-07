@@ -2,27 +2,22 @@ import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 
-const PORT = env.PORT || 3000;
-
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Server running on http://localhost:${PORT}`);
+const server = app.listen(env.PORT, () => {
+  logger.info(`Server running on http://localhost:${env.PORT}`);
 });
 
-/**
- * Graceful shutdown & error handling
- */
-process.on("uncaughtException", (err) => {
-  logger.error("UNCAUGHT EXCEPTION 💥", err);
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught exception", error);
   process.exit(1);
 });
 
-process.on("unhandledRejection", (err) => {
-  logger.error("UNHANDLED REJECTION 💥", err);
+process.on("unhandledRejection", (error) => {
+  logger.error("Unhandled rejection", error);
   server.close(() => process.exit(1));
 });
 
 process.on("SIGTERM", () => {
-  logger.info("SIGTERM RECEIVED. Shutting down gracefully...");
+  logger.info("SIGTERM received. Shutting down gracefully...");
   server.close(() => {
     logger.info("Process terminated");
   });
