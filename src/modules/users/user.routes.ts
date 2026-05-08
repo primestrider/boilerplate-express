@@ -3,7 +3,12 @@ import { Router } from "express";
 import { asyncHandler } from "../../middlewares/async-handler.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import type { UserController } from "./user.controller";
-import { createUserSchema, userIdParamsSchema } from "./user.validation";
+import {
+  createUserSchema,
+  type ListUsersQueryDto,
+  listUsersQuerySchema,
+  userIdParamsSchema,
+} from "./user.validation";
 
 /**
  * Builds user routes with injected controller dependencies.
@@ -14,7 +19,11 @@ import { createUserSchema, userIdParamsSchema } from "./user.validation";
 export const createUserRouter = (userController: UserController) => {
   const router = Router();
 
-  router.get("/", asyncHandler(userController.findAll));
+  router.get<Record<string, never>, unknown, unknown, ListUsersQueryDto>(
+    "/",
+    validate({ query: listUsersQuerySchema }),
+    asyncHandler(userController.findAll),
+  );
   router.get(
     "/:id",
     validate({ params: userIdParamsSchema }),

@@ -23,3 +23,19 @@ export type CreateUserInput = {
   name: string;
   email: string;
 };
+
+/**
+ * Pagination options accepted by user list queries.
+ */
+export type FindUsersInput = {
+  page: number;
+  limit: number;
+};
+
+/**
+ * User list result returned by repositories.
+ */
+export type FindUsersResult = {
+  users: User[];
+  total: number;
+};

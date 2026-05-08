@@ -1,11 +1,11 @@
 import type { ErrorRequestHandler } from "express";
 import { StatusCodes } from "http-status-codes";
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
 import { env } from "../config/env";
 import { logger } from "../config/logger";
-import { AppError } from "../libs/app-error";
-import { responseFormatter } from "../libs/response";
+import { HttpError, responseFormatter } from "../libs/response";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -30,12 +30,33 @@ export const errorMiddleware: ErrorRequestHandler = (
     return;
   }
 
-  if (error instanceof AppError) {
+  if (error instanceof HttpError) {
     res.status(error.statusCode).json(
       responseFormatter.error(error.message, error.errorCode, {
         details: error.details,
       }),
     );
+    return;
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2002") {
+      res
+        .status(StatusCodes.CONFLICT)
+        .json(
+          responseFormatter.error(
+            "Resource already exists",
+            "RESOURCE_ALREADY_EXISTS",
+          ),
+        );
+      return;
+    }
+
+    logger.error("Prisma error", error);
+
+    res
+      .status(StatusCodes.INTERNAL_SERVER_ERROR)
+      .json(responseFormatter.error("Database error", "DATABASE_ERROR"));
     return;
   }
 

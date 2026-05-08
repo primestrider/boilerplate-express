@@ -1,6 +1,16 @@
-import { AppError } from "../../libs/app-error";
-import type { CreateUserInput, User } from "./user.entity";
+import { HttpError } from "../../libs/response";
+import type { CreateUserInput, FindUsersInput, User } from "./user.entity";
 import type { UserRepository } from "./user.repository";
+
+type PaginatedUsers = {
+  data: User[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+};
 
 /**
  * Contains user business rules.
@@ -12,10 +22,20 @@ export class UserService {
   constructor(private readonly userRepository: UserRepository) {}
 
   /**
-   * Returns all users.
+   * Returns paginated users.
    */
-  async findAll(): Promise<User[]> {
-    return this.userRepository.findAll();
+  async findAll(input: FindUsersInput): Promise<PaginatedUsers> {
+    const { users, total } = await this.userRepository.findAll(input);
+
+    return {
+      data: users,
+      meta: {
+        page: input.page,
+        limit: input.limit,
+        total,
+        totalPages: Math.ceil(total / input.limit),
+      },
+    };
   }
 
   /**
@@ -25,7 +45,7 @@ export class UserService {
     const user = await this.userRepository.findById(id);
 
     if (!user) {
-      throw AppError.notFound("User not found", {
+      throw HttpError.notFound("User not found", {
         errorCode: "USER_NOT_FOUND",
       });
     }
@@ -40,7 +60,7 @@ export class UserService {
     const existingUser = await this.userRepository.findByEmail(input.email);
 
     if (existingUser) {
-      throw AppError.conflict("Email already exists", {
+      throw HttpError.conflict("Email already exists", {
         errorCode: "EMAIL_ALREADY_EXISTS",
       });
     }

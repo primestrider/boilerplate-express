@@ -8,6 +8,7 @@ import { corsOptions } from "./config/cors.config";
 import routes from "./routes";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFoundMiddleware } from "./middlewares/not-found.middleware";
+import { requestLoggerMiddleware } from "./middlewares/request-logger.middleware";
 import { globalLimiter } from "./config/rate-limit.config";
 
 const app = express();
@@ -22,6 +23,7 @@ app.set("trust proxy", env.TRUST_PROXY);
  */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requestLoggerMiddleware);
 
 /**
  * SECURITY

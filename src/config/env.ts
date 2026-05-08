@@ -10,6 +10,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   CORS_ORIGIN: z.string().default("*"),
   TRUST_PROXY: z.coerce.number().int().min(0).default(1),
+  DATABASE_URL: z.string().default("file:./dev.db"),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

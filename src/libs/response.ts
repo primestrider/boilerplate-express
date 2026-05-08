@@ -1,3 +1,5 @@
+import { StatusCodes } from "http-status-codes";
+
 /**
  * Pagination metadata returned by list endpoints.
  */
@@ -38,6 +40,74 @@ type FormatterInput<T = unknown, M = unknown> = {
 type ErrorOptions = {
   details?: unknown;
 };
+
+type HttpErrorOptions = {
+  statusCode?: number;
+  errorCode?: string;
+  details?: unknown;
+};
+
+/**
+ * Error type consumed by the centralized error middleware.
+ *
+ * It lives beside the response formatter so the API response contract and HTTP
+ * error metadata stay in one small place.
+ */
+export class HttpError extends Error {
+  public readonly statusCode: number;
+  public readonly errorCode: string | undefined;
+  public readonly details: unknown;
+
+  constructor(message: string, options: HttpErrorOptions = {}) {
+    super(message);
+
+    this.name = "HttpError";
+    this.statusCode = options.statusCode ?? StatusCodes.INTERNAL_SERVER_ERROR;
+    this.errorCode = options.errorCode;
+    this.details = options.details;
+
+    Error.captureStackTrace(this, this.constructor);
+  }
+
+  /**
+   * Creates a 400 Bad Request error.
+   */
+  static badRequest(
+    message: string,
+    options: Omit<HttpErrorOptions, "statusCode"> = {},
+  ) {
+    return new HttpError(message, {
+      ...options,
+      statusCode: StatusCodes.BAD_REQUEST,
+    });
+  }
+
+  /**
+   * Creates a 404 Not Found error.
+   */
+  static notFound(
+    message: string,
+    options: Omit<HttpErrorOptions, "statusCode"> = {},
+  ) {
+    return new HttpError(message, {
+      ...options,
+      statusCode: StatusCodes.NOT_FOUND,
+    });
+  }
+
+  /**
+   * Creates a 409 Conflict error.
+   */
+  static conflict(
+    message: string,
+    options: Omit<HttpErrorOptions, "statusCode"> = {},
+  ) {
+    return new HttpError(message, {
+      ...options,
+      statusCode: StatusCodes.CONFLICT,
+    });
+  }
+}
 
 /**
  * Builds a response body from a response type.

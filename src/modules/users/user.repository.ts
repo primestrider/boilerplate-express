@@ -1,6 +1,11 @@
-import { randomUUID } from "crypto";
+import type { PrismaClient } from "@prisma/client";
 
-import type { CreateUserInput, User } from "./user.entity";
+import type {
+  CreateUserInput,
+  FindUsersInput,
+  FindUsersResult,
+  User,
+} from "./user.entity";
 
 const normalizeEmail = (email: string) => email.toLowerCase();
 
@@ -11,64 +16,66 @@ const normalizeEmail = (email: string) => email.toLowerCase();
  * implementation, which keeps the module dependency-injection friendly.
  */
 export interface UserRepository {
-  findAll(): Promise<User[]>;
+  findAll(input: FindUsersInput): Promise<FindUsersResult>;
   findById(id: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
   create(input: CreateUserInput): Promise<User>;
 }
 
 /**
- * In-memory repository used as a boilerplate example.
+ * Prisma implementation of the user repository.
  *
- * Replace this class with a Prisma, SQL, MongoDB, or external API
- * implementation while keeping the UserRepository interface unchanged.
+ * The service layer does not know that Prisma is used here; it only depends on
+ * the UserRepository interface.
  */
-export class InMemoryUserRepository implements UserRepository {
-  private readonly users = new Map<string, User>();
-  private readonly emailIndex = new Map<string, string>();
+export class PrismaUserRepository implements UserRepository {
+  constructor(private readonly db: PrismaClient) {}
 
   /**
-   * Returns users ordered by newest first.
+   * Returns paginated users ordered by newest first.
    */
-  async findAll(): Promise<User[]> {
-    return Array.from(this.users.values()).sort(
-      (firstUser, secondUser) =>
-        secondUser.createdAt.getTime() - firstUser.createdAt.getTime(),
-    );
+  async findAll(input: FindUsersInput): Promise<FindUsersResult> {
+    const skip = (input.page - 1) * input.limit;
+
+    const [users, total] = await Promise.all([
+      this.db.user.findMany({
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: input.limit,
+      }),
+      this.db.user.count(),
+    ]);
+
+    return { users, total };
   }
 
   /**
    * Finds a user by id.
    */
   async findById(id: string): Promise<User | null> {
-    return this.users.get(id) ?? null;
+    return this.db.user.findUnique({
+      where: { id },
+    });
   }
 
   /**
    * Finds a user by normalized email.
    */
   async findByEmail(email: string): Promise<User | null> {
-    const userId = this.emailIndex.get(normalizeEmail(email));
-
-    return userId ? this.findById(userId) : null;
+    return this.db.user.findUnique({
+      where: { email: normalizeEmail(email) },
+    });
   }
 
   /**
-   * Creates a user and stores lookup indexes.
+   * Creates a user.
    */
   async create(input: CreateUserInput): Promise<User> {
-    const now = new Date();
-    const user: User = {
-      id: randomUUID(),
-      name: input.name,
-      email: normalizeEmail(input.email),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.users.set(user.id, user);
-    this.emailIndex.set(user.email, user.id);
-
-    return user;
+    return this.db.user.create({
+      data: {
+        name: input.name,
+        email: normalizeEmail(input.email),
+      },
+    });
   }
 }

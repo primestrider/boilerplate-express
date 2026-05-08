@@ -1,8 +1,14 @@
 import type { RequestHandler } from "express";
+import { StatusCodes } from "http-status-codes";
 
-import { sendCreated, sendSuccess } from "../../libs/http-response";
+import { responseFormatter } from "../../libs/response";
+import { toUserResponse } from "./user.mapper";
 import type { UserService } from "./user.service";
-import type { CreateUserDto, UserIdParamsDto } from "./user.validation";
+import type {
+  CreateUserDto,
+  ListUsersQueryDto,
+  UserIdParamsDto,
+} from "./user.validation";
 
 /**
  * Handles HTTP requests for the user module.
@@ -16,10 +22,23 @@ export class UserController {
   /**
    * GET /users
    */
-  findAll: RequestHandler = async (_req, res) => {
-    const users = await this.userService.findAll();
+  findAll: RequestHandler<
+    Record<string, never>,
+    unknown,
+    unknown,
+    ListUsersQueryDto
+  > = async (req, res) => {
+    const users = await this.userService.findAll(req.query);
 
-    sendSuccess(res, users, "Users retrieved successfully");
+    res
+      .status(StatusCodes.OK)
+      .json(
+        responseFormatter.paginated(
+          users.data.map(toUserResponse),
+          users.meta,
+          "Users retrieved successfully",
+        ),
+      );
   };
 
   /**
@@ -28,7 +47,14 @@ export class UserController {
   findById: RequestHandler<UserIdParamsDto> = async (req, res) => {
     const user = await this.userService.findById(req.params.id);
 
-    sendSuccess(res, user, "User retrieved successfully");
+    res
+      .status(StatusCodes.OK)
+      .json(
+        responseFormatter.success(
+          toUserResponse(user),
+          "User retrieved successfully",
+        ),
+      );
   };
 
   /**
@@ -38,6 +64,13 @@ export class UserController {
     async (req, res) => {
       const user = await this.userService.create(req.body);
 
-      sendCreated(res, user, "User created successfully");
+      res
+        .status(StatusCodes.CREATED)
+        .json(
+          responseFormatter.success(
+            toUserResponse(user),
+            "User created successfully",
+          ),
+        );
     };
 }

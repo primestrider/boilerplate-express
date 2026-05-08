@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
+import { StatusCodes } from "http-status-codes";
 
-import { sendSuccess } from "../../libs/http-response";
+import { responseFormatter } from "../../libs/response";
 import type { HealthService } from "./health.service";
 
 export class HealthController {
@@ -9,6 +10,8 @@ export class HealthController {
   check: RequestHandler = (_req, res) => {
     const health = this.healthService.check();
 
-    sendSuccess(res, health, "Service is healthy");
+    res
+      .status(StatusCodes.OK)
+      .json(responseFormatter.success(health, "Service is healthy"));
   };
 }

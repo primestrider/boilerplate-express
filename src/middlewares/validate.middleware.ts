@@ -1,10 +1,9 @@
-import type { NextFunction, Request, Response } from "express";
-import type { ParamsDictionary } from "express-serve-static-core";
-import type { ParsedQs } from "qs";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import type { ParamsDictionary, Query } from "express-serve-static-core";
 import type { ZodSchema } from "zod";
 import { ZodError } from "zod";
 
-import { AppError } from "../libs/app-error";
+import { HttpError } from "../libs/response";
 
 type ValidationSchemas = {
   body?: ZodSchema;
@@ -28,26 +27,37 @@ const formatZodError = (error: ZodError) =>
  * sanitized and transformed data.
  */
 export const validate =
-  (schemas: ValidationSchemas) =>
-  (req: Request, _res: Response, next: NextFunction) => {
+  <
+    Params = ParamsDictionary,
+    ResBody = unknown,
+    ReqBody = unknown,
+    ReqQuery = Query,
+  >(
+    schemas: ValidationSchemas,
+  ): RequestHandler<Params, ResBody, ReqBody, ReqQuery> =>
+  (
+    req: Request<Params, ResBody, ReqBody, ReqQuery>,
+    _res: Response<ResBody>,
+    next: NextFunction,
+  ) => {
     try {
       if (schemas.body) {
-        req.body = schemas.body.parse(req.body);
+        req.body = schemas.body.parse(req.body) as ReqBody;
       }
 
       if (schemas.params) {
-        req.params = schemas.params.parse(req.params) as ParamsDictionary;
+        req.params = schemas.params.parse(req.params) as Params;
       }
 
       if (schemas.query) {
-        req.query = schemas.query.parse(req.query) as ParsedQs;
+        req.query = schemas.query.parse(req.query) as ReqQuery;
       }
 
       next();
     } catch (error) {
       if (error instanceof ZodError) {
         next(
-          AppError.badRequest("Validation error", {
+          HttpError.badRequest("Validation error", {
             errorCode: "VALIDATION_ERROR",
             details: formatZodError(error),
           }),
