@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "jest",
@@ -20,7 +20,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^4.22.1",
+    "express": "^4.22.3",
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^8.3.2",
     "helmet": "^8.1.0",
@@ -43,7 +43,10 @@
     "prettier": "^3.8.3",
     "prisma": "6.19.3",
     "ts-jest": "^29.4.9",
-    "ts-node-dev": "^2.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.2"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
   }
 }
