@@ -45,6 +45,13 @@ export class HttpError extends Error {
     });
   }
 
+  static forbidden(message: string, options: FactoryOptions = {}) {
+    return new HttpError(message, {
+      ...options,
+      statusCode: StatusCodes.FORBIDDEN,
+    });
+  }
+
   static notFound(message: string, options: FactoryOptions = {}) {
     return new HttpError(message, {
       ...options,

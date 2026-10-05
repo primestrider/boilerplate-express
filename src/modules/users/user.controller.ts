@@ -2,6 +2,8 @@ import type { RequestHandler } from "express";
 import { StatusCodes } from "http-status-codes";
 
 import { sendSuccess, sendPaginated } from "../../shared/http/response";
+import { getAuth } from "../authentication/authenticate.middleware";
+import { assertOwnerOrRole } from "../authentication/authorize";
 import { toUserResponse } from "./user.mapper";
 import type { UserService } from "./user.service";
 import type { ListUsersQueryDto, UserIdParamsDto } from "./user.schema";
@@ -39,6 +41,8 @@ export class UserController {
    * GET /users/:id
    */
   findById: RequestHandler<UserIdParamsDto> = async (req, res) => {
+    assertOwnerOrRole(getAuth(res), req.params.id, "admin");
+
     const user = await this.userService.findById(req.params.id);
 
     sendSuccess(

@@ -11,6 +11,7 @@ export default defineConfig({
       DATABASE_URL: ":memory:",
       JWT_SECRET: "test-secret-that-is-at-least-32-characters-long",
       JWT_TTL_SECONDS: "900",
+      REFRESH_TOKEN_TTL_SECONDS: "2592000",
     },
   },
 });

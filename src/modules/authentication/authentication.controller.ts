@@ -9,15 +9,22 @@ import type {
   AuthenticationService,
 } from "./authentication.service";
 import { getAuth } from "./authenticate.middleware";
-import type { LoginDto, RegisterDto } from "./authentication.schema";
+import type {
+  AuthenticationResponse,
+  LoginDto,
+  RefreshDto,
+  RegisterDto,
+} from "./authentication.schema";
 
 const toAuthenticationResponse = ({
   user,
-  ...token
-}: AuthenticationResult) => ({
-  ...token,
+  ...tokens
+}: AuthenticationResult): AuthenticationResponse => ({
+  ...tokens,
   user: toUserResponse(user),
 });
+
+type NoParams = Record<string, never>;
 
 export class AuthenticationController {
   constructor(
@@ -28,25 +35,24 @@ export class AuthenticationController {
   /**
    * POST /authentication/register
    */
-  register: RequestHandler<Record<string, never>, unknown, RegisterDto> =
-    async (req, res) => {
-      const result = await this.authenticationService.register(req.body);
+  register: RequestHandler<NoParams, unknown, RegisterDto> = async (
+    req,
+    res,
+  ) => {
+    const result = await this.authenticationService.register(req.body);
 
-      sendSuccess(
-        res,
-        StatusCodes.CREATED,
-        toAuthenticationResponse(result),
-        "Registered successfully",
-      );
-    };
+    sendSuccess(
+      res,
+      StatusCodes.CREATED,
+      toAuthenticationResponse(result),
+      "Registered successfully",
+    );
+  };
 
   /**
    * POST /authentication/login
    */
-  login: RequestHandler<Record<string, never>, unknown, LoginDto> = async (
-    req,
-    res,
-  ) => {
+  login: RequestHandler<NoParams, unknown, LoginDto> = async (req, res) => {
     const result = await this.authenticationService.login(req.body);
 
     sendSuccess(
@@ -55,6 +61,29 @@ export class AuthenticationController {
       toAuthenticationResponse(result),
       "Logged in successfully",
     );
+  };
+
+  /**
+   * POST /authentication/refresh
+   */
+  refresh: RequestHandler<NoParams, unknown, RefreshDto> = async (req, res) => {
+    const result = await this.authenticationService.refresh(req.body);
+
+    sendSuccess(
+      res,
+      StatusCodes.OK,
+      toAuthenticationResponse(result),
+      "Token refreshed successfully",
+    );
+  };
+
+  /**
+   * POST /authentication/logout
+   */
+  logout: RequestHandler<NoParams, unknown, RefreshDto> = async (req, res) => {
+    await this.authenticationService.logout(req.body);
+
+    sendSuccess(res, StatusCodes.OK, undefined, "Logged out successfully");
   };
 
   /**

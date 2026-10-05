@@ -1,7 +1,11 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createTestApp, registerUser } from "./test/create-test-app";
+import {
+  createTestApp,
+  registerAdmin,
+  registerUser,
+} from "./test/create-test-app";
 
 const { app } = createTestApp();
 
@@ -18,9 +22,11 @@ describe("app", () => {
   });
 
   it("mirrors the HTTP status as statusCode in every response body", async () => {
-    const { app } = createTestApp();
+    const { app, db } = createTestApp();
     const { accessToken } = await registerUser(app);
-    const auth = { Authorization: `Bearer ${accessToken}` };
+    const admin = await registerAdmin(app, db);
+    const auth = { Authorization: `Bearer ${admin.accessToken}` };
+    const userAuth = { Authorization: `Bearer ${accessToken}` };
 
     const responses = await Promise.all([
       request(app).get("/api/health/live"), // 200 success
@@ -37,11 +43,12 @@ describe("app", () => {
         .set("Content-Type", "application/json")
         .send("{bad"), // 400 malformed JSON
       request(app).get("/api/users"), // 401
+      request(app).get("/api/users").set(userAuth), // 403
       request(app).get("/api/nope"), // 404
     ]);
 
     expect(responses.map((res) => res.status)).toEqual([
-      200, 200, 201, 409, 400, 400, 401, 404,
+      200, 200, 201, 409, 400, 400, 401, 403, 404,
     ]);
     for (const res of responses) {
       expect(res.body.statusCode).toBe(res.status);

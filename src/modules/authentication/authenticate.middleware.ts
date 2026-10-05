@@ -1,10 +1,12 @@
 import type { RequestHandler, Response } from "express";
 
 import { HttpError } from "../../shared/errors/http-error";
+import type { UserRole } from "../users/user.entity";
 import type { TokenService } from "./token.service";
 
 export type AuthContext = {
   userId: string;
+  role: UserRole;
 };
 
 declare global {
@@ -34,7 +36,7 @@ export const createAuthenticate =
       });
     }
 
-    res.locals.auth = { userId: tokenService.verify(token) };
+    res.locals.auth = tokenService.verifyAccessToken(token);
     res.removeHeader("WWW-Authenticate");
 
     next();

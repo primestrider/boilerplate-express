@@ -1,29 +1,43 @@
 import { Router, type RequestHandler } from "express";
 
-import { createAuthenticationLimiter } from "../../config/rate-limit.config";
 import { validate } from "../../shared/middlewares/validate.middleware";
 import type { AuthenticationController } from "./authentication.controller";
-import { loginSchema, registerSchema } from "./authentication.schema";
+import {
+  loginSchema,
+  refreshSchema,
+  registerSchema,
+} from "./authentication.schema";
 
 export const createAuthenticationRouter = (
   authenticationController: AuthenticationController,
   authenticate: RequestHandler,
+  credentialsLimiter: RequestHandler,
 ) => {
   const router = Router();
-  // Shared by register and login: both run an expensive password hash.
-  const authenticationLimiter = createAuthenticationLimiter();
 
+  // Credential endpoints share a stricter limiter (only failures count).
   router.post(
     "/register",
-    authenticationLimiter,
+    credentialsLimiter,
     validate({ body: registerSchema }),
     authenticationController.register,
   );
   router.post(
     "/login",
-    authenticationLimiter,
+    credentialsLimiter,
     validate({ body: loginSchema }),
     authenticationController.login,
+  );
+  router.post(
+    "/refresh",
+    credentialsLimiter,
+    validate({ body: refreshSchema }),
+    authenticationController.refresh,
+  );
+  router.post(
+    "/logout",
+    validate({ body: refreshSchema }),
+    authenticationController.logout,
   );
   router.get("/profile", authenticate, authenticationController.profile);
 

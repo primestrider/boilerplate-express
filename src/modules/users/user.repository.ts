@@ -7,6 +7,7 @@ import type {
   FindUsersInput,
   FindUsersResult,
   User,
+  UserRole,
 } from "./user.entity";
 
 const normalizeEmail = (email: string) => email.toLowerCase();
@@ -23,6 +24,7 @@ export interface UserRepository {
   findByEmail(email: string): Promise<User | null>;
   create(input: CreateUserInput): Promise<User>;
   updatePasswordHash(id: string, passwordHash: string): Promise<void>;
+  updateRole(id: string, role: UserRole): Promise<void>;
 }
 
 /**
@@ -104,5 +106,12 @@ export class DrizzleUserRepository implements UserRepository {
    */
   async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
     await this.db.update(users).set({ passwordHash }).where(eq(users.id, id));
+  }
+
+  /**
+   * Changes a user's role.
+   */
+  async updateRole(id: string, role: UserRole): Promise<void> {
+    await this.db.update(users).set({ role }).where(eq(users.id, id));
   }
 }

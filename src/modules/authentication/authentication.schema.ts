@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { userResponseSchema } from "../users/user.mapper";
+
 const email = z.string().trim().email().toLowerCase();
 
 /**
@@ -21,5 +23,29 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+/**
+ * Body of POST /refresh and POST /logout.
+ */
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1).max(256),
+});
+
+/**
+ * Response of register, login and refresh.
+ */
+export const authenticationResponseSchema = z.object({
+  accessToken: z.string(),
+  tokenType: z.literal("Bearer"),
+  expiresIn: z.int().describe("Access token lifetime in seconds"),
+  refreshToken: z.string(),
+  refreshExpiresIn: z.int().describe("Refresh token lifetime in seconds"),
+  user: userResponseSchema,
+});
+
+export type AuthenticationResponse = z.infer<
+  typeof authenticationResponseSchema
+>;
+
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
+export type RefreshDto = z.infer<typeof refreshSchema>;

@@ -23,6 +23,7 @@ const createFakeRepository = (seed: User[] = []): UserRepository => {
       const user = {
         ...input,
         id: String(users.length + 1),
+        role: "user" as const,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -30,6 +31,7 @@ const createFakeRepository = (seed: User[] = []): UserRepository => {
       return user;
     },
     updatePasswordHash: async () => {},
+    updateRole: async () => {},
   };
 };
 
@@ -38,6 +40,7 @@ const existing: User = {
   name: "Ricky",
   email: "r@x.com",
   passwordHash: "hash",
+  role: "user",
   createdAt: new Date(),
   updatedAt: new Date(),
 };

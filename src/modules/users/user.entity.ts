@@ -1,4 +1,12 @@
 /**
+ * Roles, from least to most privileged. Add new roles here; the database
+ * column and token claims follow this list.
+ */
+export const USER_ROLES = ["user", "admin"] as const;
+
+export type UserRole = (typeof USER_ROLES)[number];
+
+/**
  * Represents a user record returned by the data layer.
  *
  * Keep this type close to the persisted shape. If the API response needs a
@@ -10,6 +18,7 @@ export type User = {
   name: string;
   email: string;
   passwordHash: string;
+  role: UserRole;
   createdAt: Date;
   updatedAt: Date;
 };
