@@ -11,11 +11,8 @@ export const corsOptions: CorsOptions = {
     allowedOrigins.includes("*") || allowedOrigins.length === 0
       ? "*"
       : (origin, callback) => {
-          if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-            return;
-          }
-
-          callback(new Error("Not allowed by CORS"));
+          // Disallowed origins get no CORS headers, so the browser blocks the
+          // response. Requests without an Origin (curl, server-to-server) pass.
+          callback(null, !origin || allowedOrigins.includes(origin));
         },
 };
