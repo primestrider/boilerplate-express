@@ -1,94 +1,94 @@
 # boilerplate-express
 
-Boilerplate REST API dengan **Express 4 + TypeScript + Prisma (SQLite)**, memakai arsitektur modular berlapis (routes → controller → service → repository) dengan dependency injection manual.
+REST API boilerplate built with **Express 4 + TypeScript + Prisma (SQLite)**, using a layered modular architecture (routes → controller → service → repository) with manual dependency injection.
 
-## Fitur
+## Features
 
-- **TypeScript strict** (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
-- **Validasi env** saat startup dengan Zod (`src/config/env.ts`) — aplikasi gagal start jika env tidak valid
-- **Validasi request** (body / params / query) dengan Zod lewat middleware `validate`
-- **Format response seragam** via `responseFormatter` + `HttpError` (`src/libs/response.ts`)
-- **Error handler terpusat** — menangani `ZodError`, `HttpError`, error Prisma (P2002 → 409), dan error tak terduga (stack trace hanya tampil di non-production)
-- **Keamanan**: `helmet`, CORS dengan allowlist, rate limit global, `trust proxy` yang bisa dikonfigurasi
-- **Logging** JSON dengan Winston + request logger (method, path, status, durasi)
-- **Graceful shutdown** (SIGINT/SIGTERM) yang menutup server dan koneksi Prisma
+- **Strict TypeScript** (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
+- **Environment validation** at startup with Zod (`src/config/env.ts`) — the app refuses to start if env is invalid
+- **Request validation** (body / params / query) with Zod via the `validate` middleware
+- **Consistent response format** via `responseFormatter` + `HttpError` (`src/libs/response.ts`)
+- **Centralized error handler** — handles `ZodError`, `HttpError`, Prisma errors (P2002 → 409), and unexpected errors (stack traces only shown outside production)
+- **Security**: `helmet`, CORS allowlist, global rate limit, configurable `trust proxy`
+- **Logging**: JSON logs with Winston + request logger (method, path, status, duration)
+- **Graceful shutdown** (SIGINT/SIGTERM) that closes the server and the Prisma connection
 
-## Prasyarat
+## Prerequisites
 
-- Node.js 20+ (diuji di Node 24)
+- Node.js 20+ (tested on Node 24)
 - npm
 
-## Memulai
+## Getting Started
 
 ```bash
 npm install
 cp .env.example .env
 npm run prisma:generate
-npm run prisma:migrate    # membuat database SQLite + migration awal
+npm run prisma:migrate    # creates the SQLite database + initial migration
 npm run dev               # http://localhost:3000
 ```
 
 ## Environment Variables
 
-| Variable       | Default         | Keterangan                                                                 |
-| -------------- | --------------- | -------------------------------------------------------------------------- |
-| `NODE_ENV`     | `development`   | `development` \| `test` \| `production`                                    |
-| `PORT`         | `3000`          | Port HTTP                                                                  |
-| `CORS_ORIGIN`  | `*`             | Daftar origin dipisah koma, mis. `https://a.com,https://b.com`. `*` = semua |
-| `TRUST_PROXY`  | `1`             | Jumlah hop proxy yang dipercaya (`0` jika tidak di belakang proxy)         |
-| `DATABASE_URL` | `file:./dev.db` | Connection string Prisma (path relatif terhadap `prisma/`)                 |
+| Variable       | Default         | Description                                                                   |
+| -------------- | --------------- | ----------------------------------------------------------------------------- |
+| `NODE_ENV`     | `development`   | `development` \| `test` \| `production`                                       |
+| `PORT`         | `3000`          | HTTP port                                                                     |
+| `CORS_ORIGIN`  | `*`             | Comma-separated origins, e.g. `https://a.com,https://b.com`. `*` = allow all |
+| `TRUST_PROXY`  | `1`             | Number of trusted proxy hops (`0` if not behind a proxy)                      |
+| `DATABASE_URL` | `file:./dev.db` | Prisma connection string (relative paths resolve from `prisma/`)              |
 
 ## Scripts
 
-| Script                    | Fungsi                                       |
-| ------------------------- | -------------------------------------------- |
-| `npm run dev`             | Jalankan dev server dengan auto-reload (tsx) |
-| `npm run build`           | Compile TypeScript ke `dist/`                |
-| `npm start`               | Jalankan hasil build (`dist/server.js`)      |
-| `npm test`                | Jalankan Jest                                |
-| `npm run prisma:generate` | Generate Prisma Client                       |
-| `npm run prisma:migrate`  | Buat & jalankan migration (dev)              |
-| `npm run prisma:studio`   | Buka Prisma Studio                           |
+| Script                    | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `npm run dev`             | Start the dev server with auto-reload (tsx) |
+| `npm run build`           | Compile TypeScript to `dist/`               |
+| `npm start`               | Run the compiled build (`dist/server.js`)   |
+| `npm test`                | Run Jest                                    |
+| `npm run prisma:generate` | Generate Prisma Client                      |
+| `npm run prisma:migrate`  | Create & apply migrations (dev)             |
+| `npm run prisma:studio`   | Open Prisma Studio                          |
 
-## Struktur Folder
+## Project Structure
 
 ```
 prisma/
-  schema.prisma              # skema database
+  schema.prisma              # database schema
 src/
   server.ts                  # entry point: listen, graceful shutdown
-  app.ts                     # setup express + middleware global
-  routes.ts                  # registrasi semua module di bawah /api
+  app.ts                     # express setup + global middleware
+  routes.ts                  # registers all modules under /api
   config/                    # env, logger, cors, rate limit
   libs/
-    prisma.ts                # instance PrismaClient bersama
+    prisma.ts                # shared PrismaClient instance
     response.ts              # responseFormatter + HttpError
   middlewares/               # async handler, validate, error, 404, request logger
   modules/
-    health/                  # contoh module tanpa database
-    users/                   # contoh module CRUD dengan Prisma
+    health/                  # example module without a database
+    users/                   # example CRUD module backed by Prisma
 ```
 
-### Anatomi sebuah module
+### Module anatomy
 
-Setiap module ada di `src/modules/<nama>/` dan terdiri dari:
+Each module lives in `src/modules/<name>/` and consists of:
 
-| File                 | Tanggung jawab                                                                 |
-| -------------------- | ------------------------------------------------------------------------------ |
-| `*.validation.ts`    | Skema Zod + tipe DTO hasil `z.infer`                                           |
-| `*.routes.ts`        | Definisi route, memasang `validate(...)` dan `asyncHandler(...)`              |
-| `*.controller.ts`    | Urusan HTTP saja: baca request, panggil service, kirim response               |
-| `*.service.ts`       | Business rule; melempar `HttpError` untuk kasus domain (not found, conflict)  |
-| `*.repository.ts`    | Interface repository + implementasi Prisma (satu-satunya yang menyentuh DB)   |
-| `*.entity.ts`        | Tipe data internal                                                             |
-| `*.mapper.ts`        | Entity → DTO response (tempat menyaring field sensitif)                        |
-| `*.module.ts`        | Factory yang merangkai repository → service → controller → router             |
+| File              | Responsibility                                                                  |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `*.validation.ts` | Zod schemas + DTO types inferred with `z.infer`                                 |
+| `*.routes.ts`     | Route definitions, wiring `validate(...)` and `asyncHandler(...)`               |
+| `*.controller.ts` | HTTP concerns only: read the request, call the service, send the response      |
+| `*.service.ts`    | Business rules; throws `HttpError` for domain cases (not found, conflict)       |
+| `*.repository.ts` | Repository interface + Prisma implementation (the only layer touching the DB)  |
+| `*.entity.ts`     | Internal data types                                                             |
+| `*.mapper.ts`     | Entity → response DTO (the place to strip sensitive fields)                     |
+| `*.module.ts`     | Factory that wires repository → service → controller → router                   |
 
-### Menambah module baru
+### Adding a new module
 
-1. Tambahkan model di `prisma/schema.prisma`, lalu `npm run prisma:migrate`.
-2. Buat folder `src/modules/<nama>/` mengikuti pola module `users`.
-3. Daftarkan router di `src/routes.ts`:
+1. Add the model to `prisma/schema.prisma`, then run `npm run prisma:migrate`.
+2. Create `src/modules/<name>/` following the `users` module pattern.
+3. Register the router in `src/routes.ts`:
 
    ```ts
    const productModule = createProductModule();
@@ -99,18 +99,18 @@ Setiap module ada di `src/modules/<nama>/` dan terdiri dari:
 
 Base URL: `/api`
 
-| Method | Endpoint      | Keterangan                                           |
-| ------ | ------------- | ---------------------------------------------------- |
-| GET    | `/health`     | Status service, uptime, timestamp                    |
-| GET    | `/users`      | Daftar user (query: `page` ≥ 1, `limit` 1–100)       |
-| GET    | `/users/:id`  | Detail user (`id` harus UUID)                        |
-| POST   | `/users`      | Buat user (body: `name` 2–100 karakter, `email`)     |
+| Method | Endpoint     | Description                                         |
+| ------ | ------------ | --------------------------------------------------- |
+| GET    | `/health`    | Service status, uptime, timestamp                   |
+| GET    | `/users`     | List users (query: `page` ≥ 1, `limit` 1–100)       |
+| GET    | `/users/:id` | Get a user (`id` must be a UUID)                    |
+| POST   | `/users`     | Create a user (body: `name` 2–100 chars, `email`)   |
 
-### Format response
+### Response format
 
-Status sukses/gagal ditentukan oleh **HTTP status code**, sehingga body tidak memiliki field `success`.
+Success or failure is expressed by the **HTTP status code**, so response bodies have no `success` field.
 
-Sukses:
+Success:
 
 ```json
 { "message": "User created successfully", "data": { "id": "...", "name": "Ricky", "email": "r@x.com" } }
@@ -136,9 +136,9 @@ Error:
 }
 ```
 
-Kode error yang dipakai: `VALIDATION_ERROR`, `USER_NOT_FOUND`, `EMAIL_ALREADY_EXISTS`, `RESOURCE_ALREADY_EXISTS`, `DATABASE_ERROR`, `TOO_MANY_REQUESTS`, `INTERNAL_SERVER_ERROR`.
+Error codes in use: `VALIDATION_ERROR`, `USER_NOT_FOUND`, `EMAIL_ALREADY_EXISTS`, `RESOURCE_ALREADY_EXISTS`, `DATABASE_ERROR`, `TOO_MANY_REQUESTS`, `INTERNAL_SERVER_ERROR`.
 
-## Catatan Keamanan Dependency
+## Dependency Security Notes
 
-- `deepmerge-ts` di-override ke `^8` (lihat `overrides` di `package.json`) karena Prisma 6 masih membawa versi 7 yang rentan (GHSA-ggr8-5vv4-36mx). Override ini bisa dihapus setelah Prisma merilis versi stabil yang memakai `deepmerge-ts` ≥ 8.
-- Cek ulang secara berkala dengan `npm audit`.
+- `deepmerge-ts` is overridden to `^8` (see `overrides` in `package.json`) because Prisma 6 still ships the vulnerable v7 (GHSA-ggr8-5vv4-36mx). Remove the override once a stable Prisma release depends on `deepmerge-ts` ≥ 8.
+- Re-check periodically with `npm audit`.
