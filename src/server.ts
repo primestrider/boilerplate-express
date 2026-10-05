@@ -6,7 +6,7 @@ import { createDatabase } from "./db";
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 const db = createDatabase(env.DATABASE_URL);
-const app = createApp({ db });
+const app = createApp({ db, config: env });
 
 const server = app.listen(env.PORT, (error) => {
   if (error) {

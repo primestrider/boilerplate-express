@@ -1,18 +1,22 @@
 import { sql } from "drizzle-orm";
 
-import type { ModuleDependencies } from "../../routes";
+import type { DB } from "../../db";
 import { HealthController } from "./health.controller";
 import { createHealthRouter } from "./health.routes";
 import { HealthService } from "./health.service";
 
+type HealthModuleDependencies = {
+  db: DB;
+};
+
 /**
- * Wires the health module and returns its router.
+ * Wires the health module.
  */
-export const createHealthModule = ({ db }: ModuleDependencies) => {
+export const createHealthModule = ({ db }: HealthModuleDependencies) => {
   const service = new HealthService(() => {
     db.run(sql`select 1`);
   });
   const controller = new HealthController(service);
 
-  return createHealthRouter(controller);
+  return { router: createHealthRouter(controller) };
 };

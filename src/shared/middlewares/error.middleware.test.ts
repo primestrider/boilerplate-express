@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { errorMiddleware } from "./error.middleware";
+import { createErrorMiddleware } from "./error.middleware";
 
 /** Minimal app whose only route throws the given error. */
 const appThrowing = (error: unknown) => {
@@ -11,7 +11,7 @@ const appThrowing = (error: unknown) => {
   app.get("/boom", () => {
     throw error;
   });
-  app.use(errorMiddleware);
+  app.use(createErrorMiddleware({ exposeStack: true }));
   return app;
 };
 
@@ -28,6 +28,22 @@ describe("errorMiddleware", () => {
     });
     // Outside production the stack is included for debugging.
     expect(res.body.details).toContain("secret detail");
+  });
+
+  it("hides the stack when exposeStack is off (production)", async () => {
+    const app = express();
+    app.get("/boom", () => {
+      throw new Error("secret detail");
+    });
+    app.use(createErrorMiddleware({ exposeStack: false }));
+
+    const res = await request(app).get("/boom");
+
+    expect(res.body).toEqual({
+      statusCode: 500,
+      message: "Internal Server Error",
+      errorCode: "INTERNAL_SERVER_ERROR",
+    });
   });
 
   it("answers database errors with a generic 500 message", async () => {

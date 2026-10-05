@@ -2,7 +2,6 @@ import { rateLimit } from "express-rate-limit";
 import { StatusCodes } from "http-status-codes";
 
 import { sendError } from "../shared/http/response";
-import { env } from "./env";
 
 /**
  * Creates the per-IP limiter for all routes.
@@ -12,10 +11,10 @@ import { env } from "./env";
  * process; use a shared store (e.g. rate-limit-redis) when running more than
  * one instance.
  */
-export const createGlobalLimiter = () =>
+export const createGlobalLimiter = (limit: number) =>
   rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
-    limit: env.RATE_LIMIT_MAX,
+    limit,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     handler: (_req, res) => {

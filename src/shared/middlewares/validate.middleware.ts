@@ -16,7 +16,7 @@ type Parsed<S, Fallback> = S extends z.ZodType ? z.output<S> : Fallback;
 /**
  * Converts Zod issues into a compact client-friendly shape.
  */
-const formatZodError = (error: z.ZodError) =>
+export const formatZodError = (error: z.ZodError) =>
   error.issues.map((issue) => ({
     path: issue.path.join("."),
     message: issue.message,

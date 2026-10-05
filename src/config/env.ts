@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const envSchema = z
   .object({
@@ -19,6 +19,11 @@ const envSchema = z
     // node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
     JWT_SECRET: z.string().min(32),
     JWT_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+    REFRESH_TOKEN_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30 * 24 * 60 * 60),
   })
   .refine(
     (env) =>
@@ -41,4 +46,6 @@ if (!parsedEnv.success) {
   );
 }
 
-export const env = parsedEnv.data;
+export type Env = z.infer<typeof envSchema>;
+
+export const env: Env = parsedEnv.data;
