@@ -1,0 +1,4 @@
+# Store and check out text files with LF on every OS (matches Prettier).
+* text=auto eol=lf
+
+*.db binary
