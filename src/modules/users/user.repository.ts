@@ -1,5 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import { desc, eq } from "drizzle-orm";
 
+import { users } from "../../db/schema";
+import type { DB } from "../../db";
 import type {
   CreateUserInput,
   FindUsersInput,
@@ -20,62 +22,87 @@ export interface UserRepository {
   findById(id: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
   create(input: CreateUserInput): Promise<User>;
+  updatePasswordHash(id: string, passwordHash: string): Promise<void>;
 }
 
 /**
- * Prisma implementation of the user repository.
+ * Drizzle implementation of the user repository.
  *
- * The service layer does not know that Prisma is used here; it only depends on
+ * The service layer does not know that Drizzle is used here; it only depends on
  * the UserRepository interface.
  */
-export class PrismaUserRepository implements UserRepository {
-  constructor(private readonly db: PrismaClient) {}
+export class DrizzleUserRepository implements UserRepository {
+  constructor(private readonly db: DB) {}
 
   /**
    * Returns paginated users ordered by newest first.
    */
   async findAll(input: FindUsersInput): Promise<FindUsersResult> {
-    const skip = (input.page - 1) * input.limit;
+    const offset = (input.page - 1) * input.limit;
 
-    const [users, total] = await Promise.all([
-      this.db.user.findMany({
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: input.limit,
-      }),
-      this.db.user.count(),
+    const [rows, total] = await Promise.all([
+      this.db
+        .select()
+        .from(users)
+        .orderBy(desc(users.createdAt))
+        .limit(input.limit)
+        .offset(offset),
+      this.db.$count(users),
     ]);
 
-    return { users, total };
+    return { users: rows, total };
   }
 
   /**
    * Finds a user by id.
    */
   async findById(id: string): Promise<User | null> {
-    return this.db.user.findUnique({
-      where: { id },
-    });
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+
+    return user ?? null;
   }
 
   /**
    * Finds a user by normalized email.
    */
   async findByEmail(email: string): Promise<User | null> {
-    return this.db.user.findUnique({
-      where: { email: normalizeEmail(email) },
-    });
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.email, normalizeEmail(email)))
+      .limit(1);
+
+    return user ?? null;
   }
 
   /**
    * Creates a user.
    */
   async create(input: CreateUserInput): Promise<User> {
-    return this.db.user.create({
-      data: {
+    const [user] = await this.db
+      .insert(users)
+      .values({
         name: input.name,
         email: normalizeEmail(input.email),
-      },
-    });
+        passwordHash: input.passwordHash,
+      })
+      .returning();
+
+    if (!user) {
+      throw new Error("Failed to create user");
+    }
+
+    return user;
+  }
+
+  /**
+   * Replaces a user's password hash (e.g. after a parameter upgrade).
+   */
+  async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+    await this.db.update(users).set({ passwordHash }).where(eq(users.id, id));
   }
 }
