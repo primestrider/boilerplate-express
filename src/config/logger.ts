@@ -14,4 +14,6 @@ export const logger = winston.createLogger({
   format: logFormat,
   defaultMeta: { service: "boilerplate-express" },
   transports: [new winston.transports.Console()],
+  // Keep test output readable; assertions check responses, not logs.
+  silent: env.NODE_ENV === "test",
 });

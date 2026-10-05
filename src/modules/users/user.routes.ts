@@ -1,38 +1,33 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 
-import { asyncHandler } from "../../middlewares/async-handler.middleware";
-import { validate } from "../../middlewares/validate.middleware";
+import { validate } from "../../shared/middlewares/validate.middleware";
 import type { UserController } from "./user.controller";
-import {
-  createUserSchema,
-  type ListUsersQueryDto,
-  listUsersQuerySchema,
-  userIdParamsSchema,
-} from "./user.validation";
+import { listUsersQuerySchema, userIdParamsSchema } from "./user.schema";
 
 /**
  * Builds user routes with injected controller dependencies.
  *
- * Keeping route creation in a function makes tests and dependency injection
- * simpler because callers can pass mocked controllers.
+ * All routes require a valid access token. Users are created through
+ * POST /authentication/register. Express 5 forwards rejected promises from async
+ * handlers to the error middleware, so no async wrapper is needed.
  */
-export const createUserRouter = (userController: UserController) => {
+export const createUserRouter = (
+  userController: UserController,
+  authenticate: RequestHandler,
+) => {
   const router = Router();
 
-  router.get<Record<string, never>, unknown, unknown, ListUsersQueryDto>(
+  router.use(authenticate);
+
+  router.get(
     "/",
     validate({ query: listUsersQuerySchema }),
-    asyncHandler(userController.findAll),
+    userController.findAll,
   );
   router.get(
     "/:id",
     validate({ params: userIdParamsSchema }),
-    asyncHandler(userController.findById),
-  );
-  router.post(
-    "/",
-    validate({ body: createUserSchema }),
-    asyncHandler(userController.create),
+    userController.findById,
   );
 
   return router;

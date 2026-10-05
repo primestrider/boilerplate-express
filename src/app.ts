@@ -1,55 +1,53 @@
-import express from "express";
+import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import "express-async-errors";
 
 import { env } from "./config/env";
 import { corsOptions } from "./config/cors.config";
-import routes from "./routes";
-import { errorMiddleware } from "./middlewares/error.middleware";
-import { notFoundMiddleware } from "./middlewares/not-found.middleware";
-import { requestLoggerMiddleware } from "./middlewares/request-logger.middleware";
-import { globalLimiter } from "./config/rate-limit.config";
-
-const app = express();
-
-/**
- * TRUST PROXY (important kalau deploy di cloud / nginx)
- */
-app.set("trust proxy", env.TRUST_PROXY);
+import { createGlobalLimiter } from "./config/rate-limit.config";
+import type { DB } from "./db";
+import { createRoutes } from "./routes";
+import { errorMiddleware } from "./shared/middlewares/error.middleware";
+import { notFoundMiddleware } from "./shared/middlewares/not-found.middleware";
+import { requestIdMiddleware } from "./shared/middlewares/request-id.middleware";
+import { requestLoggerMiddleware } from "./shared/middlewares/request-logger.middleware";
 
 /**
- * GLOBAL MIDDLEWARES
+ * Infrastructure the app needs from the outside world.
+ *
+ * server.ts creates the real instances; tests pass their own (e.g. an
+ * in-memory database).
  */
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(requestLoggerMiddleware);
+export type AppDependencies = {
+  db: DB;
+};
 
 /**
- * SECURITY
+ * Builds the Express application without starting an HTTP server.
  */
-app.use(helmet());
+export const createApp = (deps: AppDependencies): Express => {
+  const app = express();
 
-app.use(cors(corsOptions));
+  // Number of reverse proxies in front of the app (nginx, load balancer).
+  app.set("trust proxy", env.TRUST_PROXY);
 
-/**
- * RATE LIMIT (anti brute force)
- */
-app.use(globalLimiter);
+  // Observability first, so rejected requests are still logged.
+  app.use(requestIdMiddleware);
+  app.use(requestLoggerMiddleware);
 
-/**
- * ROUTES
- */
-app.use("/api", routes);
+  // Security before body parsing, so rejected requests are never parsed.
+  app.use(helmet());
+  app.use(cors(corsOptions));
+  app.use(createGlobalLimiter());
 
-/**
- * 404 HANDLER
- */
-app.use(notFoundMiddleware);
+  // JSON only, with a size cap.
+  app.use(express.json({ limit: "100kb" }));
 
-/**
- * ERROR HANDLER (HARUS PALING BAWAH)
- */
-app.use(errorMiddleware);
+  app.use("/api", createRoutes(deps));
 
-export default app;
+  app.use(notFoundMiddleware);
+  // Must be registered last.
+  app.use(errorMiddleware);
+
+  return app;
+};

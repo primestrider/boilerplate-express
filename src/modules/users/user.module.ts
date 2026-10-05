@@ -1,24 +1,18 @@
-import { prisma } from "../../libs/prisma";
+import type { ModuleDependencies } from "../../routes";
 import { UserController } from "./user.controller";
-import { PrismaUserRepository } from "./user.repository";
+import { DrizzleUserRepository } from "./user.repository";
 import { createUserRouter } from "./user.routes";
 import { UserService } from "./user.service";
 
 /**
- * Creates the user module with all of its dependencies.
+ * Wires the user module and returns its router.
  *
  * Replace the repository here if the persistence layer changes.
  */
-export const createUserModule = () => {
-  const repository = new PrismaUserRepository(prisma);
+export const createUserModule = ({ db, authenticate }: ModuleDependencies) => {
+  const repository = new DrizzleUserRepository(db);
   const service = new UserService(repository);
   const controller = new UserController(service);
-  const router = createUserRouter(controller);
 
-  return {
-    controller,
-    repository,
-    router,
-    service,
-  };
+  return createUserRouter(controller, authenticate);
 };

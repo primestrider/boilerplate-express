@@ -1,4 +1,4 @@
-import { HttpError } from "../../libs/response";
+import { HttpError } from "../../shared/errors/http-error";
 import type { CreateUserInput, FindUsersInput, User } from "./user.entity";
 import type { UserRepository } from "./user.repository";
 

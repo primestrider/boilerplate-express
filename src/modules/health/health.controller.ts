@@ -1,17 +1,23 @@
 import type { RequestHandler } from "express";
 import { StatusCodes } from "http-status-codes";
 
-import { responseFormatter } from "../../libs/response";
+import { sendSuccess } from "../../shared/http/response";
 import type { HealthService } from "./health.service";
 
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
-  check: RequestHandler = (_req, res) => {
-    const health = this.healthService.check();
+  /**
+   * GET /health/live
+   */
+  live: RequestHandler = (_req, res) => {
+    sendSuccess(res, StatusCodes.OK, this.healthService.liveness());
+  };
 
-    res
-      .status(StatusCodes.OK)
-      .json(responseFormatter.success(health, "Service is healthy"));
+  /**
+   * GET /health/ready
+   */
+  ready: RequestHandler = (_req, res) => {
+    sendSuccess(res, StatusCodes.OK, this.healthService.readiness());
   };
 }
