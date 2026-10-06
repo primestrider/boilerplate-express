@@ -1,5 +1,6 @@
 import type { RequestHandler, Response } from "express";
 
+import { getRequestContext } from "../../shared/context/request-context";
 import { HttpError } from "../../shared/errors/http-error";
 import type { UserRole } from "../users/user.entity";
 import type { TokenService } from "./token.service";
@@ -36,8 +37,12 @@ export const createAuthenticate =
       });
     }
 
-    res.locals.auth = tokenService.verifyAccessToken(token);
+    const auth = tokenService.verifyAccessToken(token);
+    res.locals.auth = auth;
     res.removeHeader("WWW-Authenticate");
+
+    const context = getRequestContext();
+    if (context) context.userId = auth.userId;
 
     next();
   };
