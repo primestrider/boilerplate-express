@@ -1,38 +1,42 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createTestApp, registerUser } from "../../test/create-test-app";
+import type { DB } from "../../db";
+import { refreshTokens, users } from "../../db/schema";
+import {
+  createTestApp,
+  registerUser,
+  type TestApp,
+} from "../../test/create-test-app";
 
 describe("refresh tokens", () => {
-  let app: ReturnType<typeof createTestApp>["app"];
-  let db: ReturnType<typeof createTestApp>["db"];
+  let app: TestApp;
+  let db: DB;
 
-  beforeEach(() => {
-    ({ app, db } = createTestApp());
+  beforeEach(async () => {
+    ({ app, db } = await createTestApp());
   });
 
   const refresh = (refreshToken: string) =>
-    request(app).post("/api/authentication/refresh").send({ refreshToken });
+    request(app).post("/api/v1/authentication/refresh").send({ refreshToken });
 
   const logout = (refreshToken: string) =>
-    request(app).post("/api/authentication/logout").send({ refreshToken });
+    request(app).post("/api/v1/authentication/logout").send({ refreshToken });
 
   const profile = (accessToken: string) =>
     request(app)
-      .get("/api/authentication/profile")
+      .get("/api/v1/authentication/profile")
       .set("Authorization", `Bearer ${accessToken}`);
 
   it("is returned on register and stored only as a hash", async () => {
     const { refreshToken } = await registerUser(app);
 
-    const rows = db.$client
-      .prepare("select token_hash from refresh_tokens")
-      .all() as { token_hash: string }[];
+    const rows = await db.select().from(refreshTokens);
 
     expect(refreshToken).toEqual(expect.any(String));
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.token_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(rows[0]?.token_hash).not.toBe(refreshToken);
+    expect(rows[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows[0]?.tokenHash).not.toBe(refreshToken);
   });
 
   it("rotates: returns a working token pair and invalidates the old token", async () => {
@@ -66,7 +70,7 @@ describe("refresh tokens", () => {
   it("keeps other sessions alive when one session is revoked", async () => {
     const { refreshToken: sessionA } = await registerUser(app);
     const login = await request(app)
-      .post("/api/authentication/login")
+      .post("/api/v1/authentication/login")
       .send({ email: "r@x.com", password: "correct horse battery" });
     const sessionB = login.body.data.refreshToken;
 
@@ -78,7 +82,7 @@ describe("refresh tokens", () => {
 
   it("rejects an expired token", async () => {
     const { refreshToken } = await registerUser(app);
-    db.$client.prepare("update refresh_tokens set expires_at = 0").run();
+    await db.update(refreshTokens).set({ expiresAt: new Date(0) });
 
     const res = await refresh(refreshToken);
 
@@ -105,18 +109,18 @@ describe("refresh tokens", () => {
 
   it("dies with its user", async () => {
     const { refreshToken } = await registerUser(app);
-    db.$client.prepare("delete from users").run();
+    await db.delete(users);
 
     expect((await refresh(refreshToken)).status).toBe(401);
   });
 
   it("carries a role change into the next access token", async () => {
     const { refreshToken } = await registerUser(app);
-    db.$client.prepare("update users set role = 'admin'").run();
+    await db.update(users).set({ role: "admin" });
 
     const res = await refresh(refreshToken);
     const list = await request(app)
-      .get("/api/users")
+      .get("/api/v1/users")
       .set("Authorization", `Bearer ${res.body.data.accessToken}`);
 
     expect(res.body.data.user.role).toBe("admin");

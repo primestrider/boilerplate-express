@@ -1,6 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { DB } from "../../db";
+import { affectedRows } from "../../db/errors";
 import { refreshTokens } from "../../db/schema";
 
 export type StoredRefreshToken = typeof refreshTokens.$inferSelect;
@@ -21,6 +22,8 @@ export interface RefreshTokenRepository {
    */
   revokeIfActive(id: string): Promise<boolean>;
   revokeFamily(familyId: string): Promise<void>;
+  /** Ends every session of a user (e.g. after a password change). */
+  revokeAllForUser(userId: string): Promise<void>;
 }
 
 export class DrizzleRefreshTokenRepository implements RefreshTokenRepository {
@@ -41,13 +44,14 @@ export class DrizzleRefreshTokenRepository implements RefreshTokenRepository {
   }
 
   async revokeIfActive(id: string): Promise<boolean> {
-    const revoked = await this.db
+    // A single conditional UPDATE: of two concurrent calls, only one changes
+    // the row.
+    const result = await this.db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })
-      .where(and(eq(refreshTokens.id, id), isNull(refreshTokens.revokedAt)))
-      .returning({ id: refreshTokens.id });
+      .where(and(eq(refreshTokens.id, id), isNull(refreshTokens.revokedAt)));
 
-    return revoked.length > 0;
+    return affectedRows(result) > 0;
   }
 
   async revokeFamily(familyId: string): Promise<void> {
@@ -59,6 +63,15 @@ export class DrizzleRefreshTokenRepository implements RefreshTokenRepository {
           eq(refreshTokens.familyId, familyId),
           isNull(refreshTokens.revokedAt),
         ),
+      );
+  }
+
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)),
       );
   }
 }

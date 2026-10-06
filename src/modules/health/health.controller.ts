@@ -17,7 +17,7 @@ export class HealthController {
   /**
    * GET /health/ready
    */
-  ready: RequestHandler = (_req, res) => {
-    sendSuccess(res, StatusCodes.OK, this.healthService.readiness());
+  ready: RequestHandler = async (_req, res) => {
+    sendSuccess(res, StatusCodes.OK, await this.healthService.readiness());
   };
 }

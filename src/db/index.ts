@@ -1,21 +1,29 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 
 import * as schema from "./schema";
 
 /**
- * Opens the SQLite database and wraps it with Drizzle.
+ * Opens a MySQL connection pool and wraps it with Drizzle.
  *
- * Called once by the composition root (server.ts) and by tests, which pass
- * ":memory:" to get an isolated database. The raw driver is available as
- * `db.$client` for closing the connection.
+ * Called once by the composition root (server.ts, worker.ts) and by tests.
+ * The pool is available as `db.$client` for closing it on shutdown.
  */
 export const createDatabase = (url: string) => {
-  const sqlite = new Database(url);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
+  const pool = mysql.createPool({
+    uri: url,
+    connectionLimit: 10,
+    // Store and read DATETIME values as UTC, whatever the server time zone.
+    timezone: "Z",
+  });
 
-  return drizzle({ client: sqlite, schema });
+  return drizzle({ client: pool, schema, mode: "default" });
 };
 
 export type DB = ReturnType<typeof createDatabase>;
+
+/**
+ * A database handle or an open transaction. Repositories accept either, so a
+ * service can run several writes atomically.
+ */
+export type Executor = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
