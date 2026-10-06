@@ -21,6 +21,8 @@ export type User = {
   role: UserRole;
   createdAt: Date;
   updatedAt: Date;
+  /** Set when the user was deleted. Repositories never return such users. */
+  deletedAt: Date | null;
 };
 
 /**
@@ -36,11 +38,26 @@ export type CreateUserInput = {
 };
 
 /**
- * Pagination options accepted by user list queries.
+ * Profile fields a user can change. Omitted fields stay as they are.
+ */
+export type UpdateUserInput = {
+  name?: string | undefined;
+  email?: string | undefined;
+};
+
+export const USER_SORT_FIELDS = ["createdAt", "name", "email"] as const;
+
+/**
+ * Pagination, filter and sort options accepted by user list queries.
  */
 export type FindUsersInput = {
   page: number;
   limit: number;
+  /** Matches name or email (substring, case-insensitive). */
+  search?: string | undefined;
+  role?: UserRole | undefined;
+  sortBy?: (typeof USER_SORT_FIELDS)[number] | undefined;
+  sortOrder?: "asc" | "desc" | undefined;
 };
 
 /**

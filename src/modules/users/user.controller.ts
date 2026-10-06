@@ -6,13 +6,19 @@ import { getAuth } from "../authentication/authenticate.middleware";
 import { assertOwnerOrRole } from "../authentication/authorize";
 import { toUserResponse } from "./user.mapper";
 import type { UserService } from "./user.service";
-import type { ListUsersQueryDto, UserIdParamsDto } from "./user.schema";
+import type {
+  ListUsersQueryDto,
+  UpdateUserDto,
+  UpdateUserRoleDto,
+  UserIdParamsDto,
+} from "./user.schema";
 
 /**
  * Handles HTTP requests for the user module.
  *
- * The controller does not contain business rules. It delegates workflows to the
- * service and formats the HTTP response consistently.
+ * The controller does not contain business rules. It checks who may act on
+ * which user, delegates the workflow to the service, and formats the
+ * response consistently.
  */
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -51,5 +57,54 @@ export class UserController {
       toUserResponse(user),
       "User retrieved successfully",
     );
+  };
+
+  /**
+   * PATCH /users/:id
+   */
+  update: RequestHandler<UserIdParamsDto, unknown, UpdateUserDto> = async (
+    req,
+    res,
+  ) => {
+    assertOwnerOrRole(getAuth(res), req.params.id, "admin");
+
+    const user = await this.userService.update(req.params.id, req.body);
+
+    sendSuccess(
+      res,
+      StatusCodes.OK,
+      toUserResponse(user),
+      "User updated successfully",
+    );
+  };
+
+  /**
+   * PATCH /users/:id/role (admin only, enforced by the route)
+   */
+  changeRole: RequestHandler<UserIdParamsDto, unknown, UpdateUserRoleDto> =
+    async (req, res) => {
+      const user = await this.userService.changeRole(
+        getAuth(res).userId,
+        req.params.id,
+        req.body.role,
+      );
+
+      sendSuccess(
+        res,
+        StatusCodes.OK,
+        toUserResponse(user),
+        "User role updated successfully",
+      );
+    };
+
+  /**
+   * DELETE /users/:id
+   */
+  delete: RequestHandler<UserIdParamsDto> = async (req, res) => {
+    assertOwnerOrRole(getAuth(res), req.params.id, "admin");
+
+    await this.userService.delete(req.params.id);
+
+    sendSuccess(res, StatusCodes.OK, undefined, "User deleted successfully");
   };
 }
