@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { RequestHandler } from "express";
 
+import { runWithRequestContext } from "../context/request-context";
+
 declare global {
   namespace Express {
     interface Locals {
@@ -13,7 +15,9 @@ const REQUEST_ID_HEADER = "X-Request-Id";
 const VALID_REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
 /**
- * Assigns a request id to every request and echoes it in the response header.
+ * Assigns a request id to every request, echoes it in the response header,
+ * and opens the request context (see request-context.ts) for the rest of the
+ * request.
  *
  * An incoming X-Request-Id (e.g. from a load balancer) is reused only when it
  * has a safe shape, so arbitrary client input never reaches the logs.
@@ -26,5 +30,5 @@ export const requestIdMiddleware: RequestHandler = (req, res, next) => {
   res.locals.requestId = requestId;
   res.set(REQUEST_ID_HEADER, requestId);
 
-  next();
+  runWithRequestContext({ requestId, ip: req.ip }, next);
 };

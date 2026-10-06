@@ -1,13 +1,18 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   createTestApp,
+  type TestApp,
   registerAdmin,
   registerUser,
 } from "./test/create-test-app";
 
-const { app } = createTestApp();
+let app: TestApp;
+
+beforeAll(async () => {
+  ({ app } = await createTestApp());
+});
 
 describe("app", () => {
   it("returns 404 with an error code for unknown routes", async () => {
@@ -22,7 +27,7 @@ describe("app", () => {
   });
 
   it("mirrors the HTTP status as statusCode in every response body", async () => {
-    const { app, db } = createTestApp();
+    const { app, db } = await createTestApp();
     const { accessToken } = await registerUser(app);
     const admin = await registerAdmin(app, db);
     const auth = { Authorization: `Bearer ${admin.accessToken}` };
@@ -30,20 +35,20 @@ describe("app", () => {
 
     const responses = await Promise.all([
       request(app).get("/api/health/live"), // 200 success
-      request(app).get("/api/users").set(auth), // 200 paginated
+      request(app).get("/api/v1/users").set(auth), // 200 paginated
       request(app)
-        .post("/api/authentication/register")
+        .post("/api/v1/authentication/register")
         .send({ name: "Anna", email: "a@x.com", password: "long password" }), // 201
       request(app)
-        .post("/api/authentication/register")
+        .post("/api/v1/authentication/register")
         .send({ name: "Dup", email: "r@x.com", password: "long password" }), // 409
-      request(app).get("/api/users?limit=0").set(auth), // 400 validation
+      request(app).get("/api/v1/users?limit=0").set(auth), // 400 validation
       request(app)
-        .post("/api/authentication/login")
+        .post("/api/v1/authentication/login")
         .set("Content-Type", "application/json")
         .send("{bad"), // 400 malformed JSON
-      request(app).get("/api/users"), // 401
-      request(app).get("/api/users").set(userAuth), // 403
+      request(app).get("/api/v1/users"), // 401
+      request(app).get("/api/v1/users").set(userAuth), // 403
       request(app).get("/api/nope"), // 404
     ]);
 
@@ -89,7 +94,7 @@ describe("app", () => {
   describe("body parsing", () => {
     it("answers malformed JSON with 400", async () => {
       const res = await request(app)
-        .post("/api/authentication/login")
+        .post("/api/v1/authentication/login")
         .set("Content-Type", "application/json")
         .send("{bad");
 
@@ -99,11 +104,32 @@ describe("app", () => {
 
     it("answers bodies over 100kb with 413", async () => {
       const res = await request(app)
-        .post("/api/authentication/login")
+        .post("/api/v1/authentication/login")
         .send({ email: "a@b.com", password: "a".repeat(200_000) });
 
       expect(res.status).toBe(413);
       expect(res.body.errorCode).toBe("REQUEST_ENTITY_TOO_LARGE");
     });
+  });
+});
+
+describe("compression and caching", () => {
+  it("compresses large responses when the client accepts gzip", async () => {
+    const res = await request(app)
+      .get("/api/docs/openapi.json")
+      .set("Accept-Encoding", "gzip");
+
+    expect(res.headers["content-encoding"]).toBe("gzip");
+  });
+
+  it("answers a matching If-None-Match with 304", async () => {
+    const first = await request(app).get("/api/docs/openapi.json");
+
+    const second = await request(app)
+      .get("/api/docs/openapi.json")
+      .set("If-None-Match", first.headers.etag as string);
+
+    expect(first.headers.etag).toBeDefined();
+    expect(second.status).toBe(304);
   });
 });

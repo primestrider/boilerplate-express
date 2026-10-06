@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { getReasonPhrase, ReasonPhrases, StatusCodes } from "http-status-codes";
 import { DrizzleQueryError } from "drizzle-orm";
+import multer from "multer";
 import { ZodError } from "zod";
 
 import { logger } from "../../config/logger";
@@ -45,8 +46,19 @@ type ErrorMiddlewareOptions = {
  */
 export const createErrorMiddleware =
   ({ exposeStack }: ErrorMiddlewareOptions): ErrorRequestHandler =>
-  (error, _req, res, _next) => {
+  (error, _req, res, next) => {
     const { requestId } = res.locals;
+
+    // A stream failed mid-response: too late for a JSON body. Express's
+    // default handler closes the connection.
+    if (res.headersSent) {
+      logger.error("Error after response started", {
+        requestId,
+        error: error.message,
+      });
+      next(error);
+      return;
+    }
 
     if (error instanceof ZodError) {
       sendError(
@@ -63,6 +75,21 @@ export const createErrorMiddleware =
       sendError(res, error.statusCode, error.message, error.errorCode, {
         details: error.details,
       });
+      return;
+    }
+
+    if (error instanceof multer.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        sendError(
+          res,
+          StatusCodes.REQUEST_TOO_LONG,
+          "File is too large",
+          "FILE_TOO_LARGE",
+        );
+        return;
+      }
+
+      sendError(res, StatusCodes.BAD_REQUEST, error.message, "INVALID_UPLOAD");
       return;
     }
 
