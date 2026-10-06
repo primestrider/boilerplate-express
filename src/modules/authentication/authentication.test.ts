@@ -3,28 +3,37 @@ import jwt from "jsonwebtoken";
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createTestApp, registerUser } from "../../test/create-test-app";
+import type { DB } from "../../db";
+import { users } from "../../db/schema";
+import {
+  createTestApp,
+  type RecordingJobQueue,
+  registerUser,
+  type TestApp,
+} from "../../test/create-test-app";
 
 const SECRET = process.env.JWT_SECRET as string;
 
 describe("authentication", () => {
-  let app: ReturnType<typeof createTestApp>["app"];
-  let db: ReturnType<typeof createTestApp>["db"];
+  let app: TestApp;
+  let db: DB;
 
-  beforeEach(() => {
-    ({ app, db } = createTestApp());
+  beforeEach(async () => {
+    ({ app, db } = await createTestApp());
   });
 
   const login = (email: string, password: string) =>
-    request(app).post("/api/authentication/login").send({ email, password });
+    request(app).post("/api/v1/authentication/login").send({ email, password });
 
   describe("POST /api/authentication/register", () => {
     it("creates a user, returns a token, and never exposes the hash", async () => {
-      const res = await request(app).post("/api/authentication/register").send({
-        name: " Ricky ",
-        email: "R@X.com",
-        password: "correct horse battery",
-      });
+      const res = await request(app)
+        .post("/api/v1/authentication/register")
+        .send({
+          name: " Ricky ",
+          email: "R@X.com",
+          password: "correct horse battery",
+        });
 
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({
@@ -39,21 +48,21 @@ describe("authentication", () => {
     it("stores an argon2id hash, not the password", async () => {
       await registerUser(app);
 
-      const row = db.$client
-        .prepare("select password_hash from users")
-        .get() as { password_hash: string };
+      const [row] = await db.select().from(users);
 
-      expect(row.password_hash).toMatch(/^\$argon2id\$v=19\$m=19456,p=1,t=2\$/);
+      expect(row?.passwordHash).toMatch(/^\$argon2id\$v=19\$m=19456,p=1,t=2\$/);
     });
 
     it("rejects a duplicate email regardless of case", async () => {
       await registerUser(app, { email: "r@x.com" });
 
-      const res = await request(app).post("/api/authentication/register").send({
-        name: "Other",
-        email: "R@X.COM",
-        password: "another password",
-      });
+      const res = await request(app)
+        .post("/api/v1/authentication/register")
+        .send({
+          name: "Other",
+          email: "R@X.COM",
+          password: "another password",
+        });
 
       expect(res.status).toBe(409);
       expect(res.body.errorCode).toBe("EMAIL_ALREADY_EXISTS");
@@ -61,7 +70,7 @@ describe("authentication", () => {
 
     it("rejects a short password", async () => {
       const res = await request(app)
-        .post("/api/authentication/register")
+        .post("/api/v1/authentication/register")
         .send({ name: "Ricky", email: "r@x.com", password: "short" });
 
       expect(res.status).toBe(400);
@@ -107,15 +116,13 @@ describe("authentication", () => {
         timeCost: 1,
         parallelism: 1,
       });
-      db.$client.prepare("update users set password_hash = ?").run(weakHash);
+      await db.update(users).set({ passwordHash: weakHash });
 
       const res = await login("r@x.com", "correct horse battery");
 
-      const row = db.$client
-        .prepare("select password_hash from users")
-        .get() as { password_hash: string };
+      const [row] = await db.select().from(users);
       expect(res.status).toBe(200);
-      expect(row.password_hash).toMatch(/^\$argon2id\$v=19\$m=19456,p=1,t=2\$/);
+      expect(row?.passwordHash).toMatch(/^\$argon2id\$v=19\$m=19456,p=1,t=2\$/);
     });
 
     it("rate-limits failed attempts", async () => {
@@ -135,7 +142,7 @@ describe("authentication", () => {
       const { accessToken } = await registerUser(app);
 
       const res = await request(app)
-        .get("/api/authentication/profile")
+        .get("/api/v1/authentication/profile")
         .set("Authorization", `Bearer ${accessToken}`);
 
       expect(res.status).toBe(200);
@@ -144,7 +151,7 @@ describe("authentication", () => {
     });
 
     it("requires a token", async () => {
-      const res = await request(app).get("/api/authentication/profile");
+      const res = await request(app).get("/api/v1/authentication/profile");
 
       expect(res.status).toBe(401);
       expect(res.body.errorCode).toBe("UNAUTHORIZED");
@@ -158,7 +165,7 @@ describe("authentication", () => {
       );
 
       const res = await request(app)
-        .get("/api/authentication/profile")
+        .get("/api/v1/authentication/profile")
         .set("Authorization", `Bearer ${forged}`);
 
       expect(res.status).toBe(401);
@@ -169,7 +176,7 @@ describe("authentication", () => {
       const unsigned = jwt.sign({ sub: "x" }, "", { algorithm: "none" });
 
       const res = await request(app)
-        .get("/api/authentication/profile")
+        .get("/api/v1/authentication/profile")
         .set("Authorization", `Bearer ${unsigned}`);
 
       expect(res.status).toBe(401);
@@ -183,7 +190,7 @@ describe("authentication", () => {
       );
 
       const res = await request(app)
-        .get("/api/authentication/profile")
+        .get("/api/v1/authentication/profile")
         .set("Authorization", `Bearer ${expired}`);
 
       expect(res.status).toBe(401);
@@ -192,14 +199,106 @@ describe("authentication", () => {
 
     it("returns 404 when the token's user no longer exists", async () => {
       const { accessToken } = await registerUser(app);
-      db.$client.prepare("delete from users").run();
+      await db.delete(users);
 
       const res = await request(app)
-        .get("/api/authentication/profile")
+        .get("/api/v1/authentication/profile")
         .set("Authorization", `Bearer ${accessToken}`);
 
       expect(res.status).toBe(404);
       expect(res.body.errorCode).toBe("USER_NOT_FOUND");
     });
+  });
+});
+
+describe("POST /api/v1/authentication/change-password", () => {
+  let app: TestApp;
+  let jobQueue: RecordingJobQueue;
+
+  beforeEach(async () => {
+    ({ app, jobQueue } = await createTestApp());
+  });
+
+  const changePassword = (token: string, body: object) =>
+    request(app)
+      .post("/api/v1/authentication/change-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+
+  it("changes the password, ends every session and emails the user", async () => {
+    const { accessToken, refreshToken } = await registerUser(app);
+
+    const res = await changePassword(accessToken, {
+      currentPassword: "correct horse battery",
+      newPassword: "a brand new password",
+    });
+
+    expect(res.status).toBe(200);
+
+    const refresh = await request(app)
+      .post("/api/v1/authentication/refresh")
+      .send({ refreshToken });
+    expect(refresh.status).toBe(401);
+
+    const oldLogin = await request(app)
+      .post("/api/v1/authentication/login")
+      .send({ email: "r@x.com", password: "correct horse battery" });
+    const newLogin = await request(app)
+      .post("/api/v1/authentication/login")
+      .send({ email: "r@x.com", password: "a brand new password" });
+    expect(oldLogin.status).toBe(401);
+    expect(newLogin.status).toBe(200);
+
+    expect(jobQueue.jobs[jobQueue.jobs.length - 1]).toMatchObject({
+      name: "send-email",
+      data: { to: "r@x.com", subject: "Your password was changed" },
+    });
+  });
+
+  it("rejects a wrong current password", async () => {
+    const { accessToken } = await registerUser(app);
+
+    const res = await changePassword(accessToken, {
+      currentPassword: "not my password",
+      newPassword: "a brand new password",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.errorCode).toBe("INVALID_CURRENT_PASSWORD");
+  });
+
+  it("rejects reusing the current password", async () => {
+    const { accessToken } = await registerUser(app);
+
+    const res = await changePassword(accessToken, {
+      currentPassword: "correct horse battery",
+      newPassword: "correct horse battery",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.details[0].path).toBe("newPassword");
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app)
+      .post("/api/v1/authentication/change-password")
+      .send({ currentPassword: "x", newPassword: "long password" });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("side effects of registration", () => {
+  it("queues a welcome email", async () => {
+    const { app, jobQueue } = await createTestApp();
+
+    await registerUser(app, { name: "Ann", email: "ann@x.com" });
+
+    expect(jobQueue.jobs).toEqual([
+      {
+        name: "send-email",
+        data: expect.objectContaining({ to: "ann@x.com", subject: "Welcome!" }),
+      },
+    ]);
   });
 });

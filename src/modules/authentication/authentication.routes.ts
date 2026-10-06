@@ -3,6 +3,7 @@ import { Router, type RequestHandler } from "express";
 import { validate } from "../../shared/middlewares/validate.middleware";
 import type { AuthenticationController } from "./authentication.controller";
 import {
+  changePasswordSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
@@ -38,6 +39,13 @@ export const createAuthenticationRouter = (
     "/logout",
     validate({ body: refreshSchema }),
     authenticationController.logout,
+  );
+  router.post(
+    "/change-password",
+    authenticate,
+    credentialsLimiter,
+    validate({ body: changePasswordSchema }),
+    authenticationController.changePassword,
   );
   router.get("/profile", authenticate, authenticationController.profile);
 

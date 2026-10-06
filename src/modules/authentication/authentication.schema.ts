@@ -31,6 +31,19 @@ export const refreshSchema = z.object({
 });
 
 /**
+ * Body of POST /change-password.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: password,
+  })
+  .refine((body) => body.newPassword !== body.currentPassword, {
+    path: ["newPassword"],
+    message: "New password must differ from the current one",
+  });
+
+/**
  * Response of register, login and refresh.
  */
 export const authenticationResponseSchema = z.object({
@@ -49,3 +62,4 @@ export type AuthenticationResponse = z.infer<
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type RefreshDto = z.infer<typeof refreshSchema>;
+export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;

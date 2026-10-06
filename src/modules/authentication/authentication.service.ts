@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 
 import { logger } from "../../config/logger";
+import type { JobQueue } from "../../jobs/jobs";
 import { HttpError } from "../../shared/errors/http-error";
+import type { MailMessage } from "../../shared/mail/mailer";
+import type { AuditService } from "../audit/audit.service";
 import type { User } from "../users/user.entity";
 import type { UserRepository } from "../users/user.repository";
 import type { UserService } from "../users/user.service";
+import { passwordChangedEmail, welcomeEmail } from "./authentication.emails";
 import type {
+  ChangePasswordDto,
   LoginDto,
   RefreshDto,
   RegisterDto,
@@ -35,8 +40,17 @@ const invalidRefreshToken = () =>
     errorCode: "INVALID_REFRESH_TOKEN",
   });
 
+type AuthenticationServiceDependencies = {
+  userService: UserService;
+  userRepository: UserRepository;
+  refreshTokenRepository: RefreshTokenRepository;
+  tokenService: TokenService;
+  auditService: AuditService;
+  jobQueue: JobQueue;
+};
+
 /**
- * Registration, login, token refresh and logout.
+ * Registration, login, token refresh, logout and password changes.
  *
  * User creation rules (e.g. unique email) stay in UserService; this service
  * adds password and token handling on top.
@@ -48,12 +62,21 @@ export class AuthenticationService {
    */
   private readonly dummyHash = hashPassword("dummy-password-for-timing");
 
-  constructor(
-    private readonly userService: UserService,
-    private readonly userRepository: UserRepository,
-    private readonly refreshTokenRepository: RefreshTokenRepository,
-    private readonly tokenService: TokenService,
-  ) {}
+  private readonly userService: UserService;
+  private readonly userRepository: UserRepository;
+  private readonly refreshTokenRepository: RefreshTokenRepository;
+  private readonly tokenService: TokenService;
+  private readonly auditService: AuditService;
+  private readonly jobQueue: JobQueue;
+
+  constructor(deps: AuthenticationServiceDependencies) {
+    this.userService = deps.userService;
+    this.userRepository = deps.userRepository;
+    this.refreshTokenRepository = deps.refreshTokenRepository;
+    this.tokenService = deps.tokenService;
+    this.auditService = deps.auditService;
+    this.jobQueue = deps.jobQueue;
+  }
 
   async register(input: RegisterDto): Promise<AuthenticationResult> {
     const user = await this.userService.create({
@@ -61,6 +84,14 @@ export class AuthenticationService {
       email: input.email,
       passwordHash: await hashPassword(input.password),
     });
+
+    await this.auditService.record({
+      action: "auth.registered",
+      entityType: "user",
+      entityId: user.id,
+      actorId: user.id,
+    });
+    await this.notify(welcomeEmail(user));
 
     return { user, ...(await this.issueTokens(user, randomUUID())) };
   }
@@ -70,10 +101,12 @@ export class AuthenticationService {
 
     if (!user) {
       await verifyPassword(await this.dummyHash, input.password);
+      await this.recordFailedLogin(null);
       throw invalidCredentials();
     }
 
     if (!(await verifyPassword(user.passwordHash, input.password))) {
+      await this.recordFailedLogin(user.id);
       throw invalidCredentials();
     }
 
@@ -83,6 +116,13 @@ export class AuthenticationService {
         await hashPassword(input.password),
       );
     }
+
+    await this.auditService.record({
+      action: "auth.login",
+      entityType: "user",
+      entityId: user.id,
+      actorId: user.id,
+    });
 
     // Every login starts a new token family (one per device/session).
     return { user, ...(await this.issueTokens(user, randomUUID())) };
@@ -108,12 +148,20 @@ export class AuthenticationService {
         userId: stored.userId,
         familyId: stored.familyId,
       });
+      await this.auditService.record({
+        action: "auth.refresh_token_reused",
+        entityType: "user",
+        entityId: stored.userId,
+        actorId: null,
+        metadata: { familyId: stored.familyId },
+      });
       throw invalidRefreshToken();
     }
 
-    // Deleted users take their tokens with them (ON DELETE CASCADE), so the
-    // user is expected to exist here.
-    const user = await this.userService.findById(stored.userId);
+    // A deleted user's tokens stay in the table but are useless from here.
+    const user = await this.userRepository.findById(stored.userId);
+
+    if (!user) throw invalidRefreshToken();
 
     return { user, ...(await this.issueTokens(user, stored.familyId)) };
   }
@@ -130,6 +178,59 @@ export class AuthenticationService {
     if (stored) {
       await this.refreshTokenRepository.revokeFamily(stored.familyId);
     }
+  }
+
+  /**
+   * Changes the caller's password after checking the current one, then ends
+   * every session: whoever might know the old password is signed out.
+   */
+  async changePassword(
+    userId: string,
+    { currentPassword, newPassword }: ChangePasswordDto,
+  ): Promise<void> {
+    const user = await this.userService.findById(userId);
+
+    if (!(await verifyPassword(user.passwordHash, currentPassword))) {
+      throw HttpError.badRequest("Current password is incorrect", {
+        errorCode: "INVALID_CURRENT_PASSWORD",
+      });
+    }
+
+    await this.userRepository.updatePasswordHash(
+      user.id,
+      await hashPassword(newPassword),
+    );
+    await this.refreshTokenRepository.revokeAllForUser(user.id);
+    await this.auditService.record({
+      action: "auth.password_changed",
+      entityType: "user",
+      entityId: user.id,
+    });
+    await this.notify(passwordChangedEmail(user));
+  }
+
+  /**
+   * Queues a notification email. Best effort: the action it reports already
+   * succeeded, so a queue outage is logged instead of failing the request.
+   */
+  private async notify(message: MailMessage) {
+    try {
+      await this.jobQueue.add("send-email", message);
+    } catch (error) {
+      logger.error("Failed to queue email", {
+        subject: message.subject,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private recordFailedLogin(userId: string | null) {
+    return this.auditService.record({
+      action: "auth.login_failed",
+      entityType: "user",
+      entityId: userId,
+      actorId: null,
+    });
   }
 
   private async issueTokens(user: User, familyId: string): Promise<TokenPair> {

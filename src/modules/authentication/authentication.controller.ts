@@ -11,6 +11,7 @@ import type {
 import { getAuth } from "./authenticate.middleware";
 import type {
   AuthenticationResponse,
+  ChangePasswordDto,
   LoginDto,
   RefreshDto,
   RegisterDto,
@@ -84,6 +85,26 @@ export class AuthenticationController {
     await this.authenticationService.logout(req.body);
 
     sendSuccess(res, StatusCodes.OK, undefined, "Logged out successfully");
+  };
+
+  /**
+   * POST /authentication/change-password
+   */
+  changePassword: RequestHandler<NoParams, unknown, ChangePasswordDto> = async (
+    req,
+    res,
+  ) => {
+    await this.authenticationService.changePassword(
+      getAuth(res).userId,
+      req.body,
+    );
+
+    sendSuccess(
+      res,
+      StatusCodes.OK,
+      undefined,
+      "Password changed successfully, please log in again",
+    );
   };
 
   /**
