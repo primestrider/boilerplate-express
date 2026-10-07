@@ -10,6 +10,7 @@ import {
   InlineJobQueue,
   type JobQueue,
 } from "./jobs/jobs";
+import { DrizzleRefreshTokenRepository } from "./modules/authentication/refresh-token.repository";
 import { MemoryCache, RedisCache, type Cache } from "./shared/cache/cache";
 import { NodemailerMailer } from "./shared/mail/mailer";
 import { LocalFileStorage } from "./shared/storage/file-storage";
@@ -38,12 +39,15 @@ const cache: Cache = redis ? new RedisCache(redis) : new MemoryCache();
 const jobQueue: JobQueue = redis
   ? new BullJobQueue(redis)
   : new InlineJobQueue(
-      createJobHandlers({ mailer: new NodemailerMailer(env) }),
+      createJobHandlers({
+        mailer: new NodemailerMailer(env),
+        refreshTokenRepository: new DrizzleRefreshTokenRepository(db),
+      }),
     );
 
 if (!redis) {
   logger.warn(
-    "REDIS_URL is not set: cache, rate limits and jobs are in-process only",
+    "REDIS_URL is not set: cache, rate limits and jobs are in-process only, and scheduled jobs do not run",
   );
 }
 

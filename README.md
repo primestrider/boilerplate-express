@@ -35,6 +35,7 @@ REST API boilerplate built with **Express 5 + TypeScript + Drizzle ORM (MySQL vi
 - **Soft delete** for users (history and foreign keys stay intact)
 - **Cache-aside** user cache (`CachedUserRepository`) evicted on every write
 - **Background jobs** with BullMQ and a separate worker process (retries with exponential backoff); emails are sent as jobs
+- **Scheduled jobs** (cron) with BullMQ job schedulers: run once per tick however many instances run, with the same retries; e.g. a daily cleanup of expired refresh tokens
 - **Email** via nodemailer (SMTP); without `SMTP_HOST` emails are logged instead
 - **Degrades instead of failing**: without `REDIS_URL` everything runs in-process; if Redis goes down at runtime, rate limits and the cache let requests through, notification emails are skipped (logged), and idempotent requests answer a retryable 503
 - **Health checks**: `/api/health/live` and `/api/health/ready` (database and Redis, 503 naming what is down)
@@ -137,7 +138,7 @@ src/
     schema.ts                # Drizzle table definitions
     migrate.ts               # applies migrations
     errors.ts                # driver error helpers (duplicate key, affected rows)
-  jobs/jobs.ts               # job names/payloads, handlers, BullMQ and inline queues
+  jobs/jobs.ts               # job names/payloads, schedules, handlers, BullMQ and inline queues
   shared/
     cache/                   # Cache interface, Redis and in-memory implementations
     context/                 # per-request context (AsyncLocalStorage)
@@ -198,6 +199,13 @@ Each module lives in `src/modules/<name>/` and consists of:
 2. Queue it from a service with `jobQueue.add("job-name", payload)` (inject `jobQueue` through the module).
 
 The worker picks it up automatically. Keep payloads small and serializable (ids, not entities), and make handlers safe to run more than once: failed jobs are retried.
+
+### Adding a scheduled (cron) job
+
+1. Add the job and its handler as above.
+2. Add it to `JOB_SCHEDULES` in `src/jobs/jobs.ts` with a cron `pattern` (evaluated in UTC).
+
+On startup the worker registers every schedule in Redis and removes schedules no longer listed. BullMQ creates one job per tick, so running several workers never runs it twice per tick. Schedules need Redis and a worker: without `REDIS_URL` they do not run. Keep scheduled handlers idempotent and bounded (e.g. delete in batches), since a retry or an overlapping run can happen.
 
 ## API
 
@@ -342,7 +350,7 @@ TEST_REDIS_URL=redis://127.0.0.1:6379/15 npm test
 ## Scaling Notes
 
 - Run several API instances behind a load balancer only with `REDIS_URL` set (shared rate limits, cache and idempotency) and a shared `FileStorage` (implement it for S3/GCS; `LocalFileStorage` is per machine).
-- Run as many workers as the job load needs; BullMQ distributes jobs between them.
+- Run as many workers as the job load needs; BullMQ distributes jobs between them, and scheduled jobs still run once per tick.
 - Set `TRUST_PROXY` to the number of proxies in front of the app so rate limits and audit IPs see the real client.
 
 ## Dependency Security Notes

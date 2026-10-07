@@ -1,5 +1,6 @@
 /**
- * Background job worker: processes the BullMQ queue filled by the API.
+ * Background job worker: processes the BullMQ queue filled by the API and
+ * registers the recurring jobs (JOB_SCHEDULES).
  *
  *   npm run worker            (development)
  *   node dist/worker.js       (after build)
@@ -11,12 +12,16 @@ import Redis from "ioredis";
 
 import { env } from "./config/env";
 import { logger } from "./config/logger";
+import { createDatabase } from "./db";
 import {
+  BullJobQueue,
   createJobHandlers,
+  JOB_SCHEDULES,
   QUEUE_NAME,
   runHandler,
   type JobName,
 } from "./jobs/jobs";
+import { DrizzleRefreshTokenRepository } from "./modules/authentication/refresh-token.repository";
 import { NodemailerMailer } from "./shared/mail/mailer";
 
 if (!env.REDIS_URL) {
@@ -24,7 +29,14 @@ if (!env.REDIS_URL) {
   process.exit(1);
 }
 
-const handlers = createJobHandlers({ mailer: new NodemailerMailer(env) });
+// BullMQ workers block on Redis and need unlimited retries per command.
+const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+const db = createDatabase(env.DATABASE_URL);
+
+const handlers = createJobHandlers({
+  mailer: new NodemailerMailer(env),
+  refreshTokenRepository: new DrizzleRefreshTokenRepository(db),
+});
 
 const worker = new Worker(
   QUEUE_NAME,
@@ -35,12 +47,25 @@ const worker = new Worker(
 
     await runHandler(handlers, job.name as JobName, job.data);
   },
-  {
-    // BullMQ workers block on Redis and need unlimited retries per command.
-    connection: new Redis(env.REDIS_URL, { maxRetriesPerRequest: null }),
-    concurrency: 5,
-  },
+  { connection, concurrency: 5 },
 );
+
+// Waits for Redis, so a worker started before Redis is up still registers the
+// schedules once it connects.
+const jobQueue = new BullJobQueue(connection);
+jobQueue
+  .syncSchedules(JOB_SCHEDULES)
+  .then(() => {
+    logger.info("Job schedules registered", {
+      schedules: JOB_SCHEDULES.map(({ name, pattern }) => ({ name, pattern })),
+    });
+  })
+  .catch((error: unknown) => {
+    // Not fatal: schedules registered by an earlier start keep running.
+    logger.error("Failed to register job schedules", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
 worker.on("completed", (job) => {
   logger.info("Job completed", { job: job.name, jobId: job.id });
@@ -61,6 +86,8 @@ const shutdown = async (signal: string) => {
   logger.info(`${signal} received. Finishing active jobs...`);
   // Waits for running jobs; unfinished ones are retried by another worker.
   await worker.close();
+  await jobQueue.close();
+  await Promise.all([db.$client.end(), connection.quit()]);
   process.exit(0);
 };
 

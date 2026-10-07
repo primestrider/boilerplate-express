@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lte } from "drizzle-orm";
 
 import type { DB } from "../../db";
 import { affectedRows } from "../../db/errors";
@@ -24,7 +24,17 @@ export interface RefreshTokenRepository {
   revokeFamily(familyId: string): Promise<void>;
   /** Ends every session of a user (e.g. after a password change). */
   revokeAllForUser(userId: string): Promise<void>;
+  /**
+   * Deletes tokens that expired at or before `now` and returns how many.
+   * Expired tokens are already rejected like unknown ones, so this changes no
+   * behavior. Revoked tokens that have not expired are kept: they are what
+   * detects a replayed (stolen) token.
+   */
+  deleteExpired(now: Date): Promise<number>;
 }
+
+/** Rows per DELETE: short statements keep row locks and replication lag low. */
+const DELETE_BATCH_SIZE = 1000;
 
 export class DrizzleRefreshTokenRepository implements RefreshTokenRepository {
   constructor(private readonly db: DB) {}
@@ -73,5 +83,22 @@ export class DrizzleRefreshTokenRepository implements RefreshTokenRepository {
       .where(
         and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)),
       );
+  }
+
+  async deleteExpired(now: Date): Promise<number> {
+    let deleted = 0;
+    let batch: number;
+
+    do {
+      batch = affectedRows(
+        await this.db
+          .delete(refreshTokens)
+          .where(lte(refreshTokens.expiresAt, now))
+          .limit(DELETE_BATCH_SIZE),
+      );
+      deleted += batch;
+    } while (batch === DELETE_BATCH_SIZE);
+
+    return deleted;
   }
 }

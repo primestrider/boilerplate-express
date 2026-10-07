@@ -69,6 +69,8 @@ export const refreshTokens = mysqlTable(
   (table) => [
     index("refresh_tokens_user_id_idx").on(table.userId),
     index("refresh_tokens_family_id_idx").on(table.familyId),
+    // Used by the scheduled cleanup of expired tokens.
+    index("refresh_tokens_expires_at_idx").on(table.expiresAt),
   ],
 );
 

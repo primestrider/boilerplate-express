@@ -317,6 +317,65 @@ Start the worker again and watch it process the waiting job.
 
 Without `REDIS_URL`, you do not need the worker: the same "Email not sent" line appears in the API's own log (inline queue).
 
+## Scheduled (cron) jobs
+
+Some work is not triggered by a request but by the clock: "every night, delete expired refresh tokens". The classic tool is a **cron expression**, five fields: `minute hour day-of-month month weekday`. `0 3 * * *` means "at 03:00 every day".
+
+### Why not `setInterval` or `node-cron` in the API?
+
+A timer inside the API runs in **every** instance. With three API instances behind a load balancer, the cleanup runs three times at 03:00. It also dies with the process, has no retries, and nobody sees whether it failed.
+
+Instead, the schedule lives in Redis and **produces normal jobs**. BullMQ's _job schedulers_ add exactly one job per tick, whatever the number of processes, and that job gets the same retries, backoff and logging as every other job.
+
+### In this boilerplate
+
+`src/jobs/jobs.ts` lists the schedules:
+
+```ts
+export const JOB_SCHEDULES: JobSchedule[] = [
+  {
+    name: "cleanup-expired-refresh-tokens",
+    pattern: "0 3 * * *", // daily at 03:00 UTC
+    data: {},
+  },
+];
+```
+
+The worker registers them at startup with `BullJobQueue.syncSchedules`:
+
+- `upsertJobScheduler` creates or updates each schedule. It is safe when several workers start at once: the schedule id is the job name, so there is still one schedule.
+- Schedules that are no longer in the list are removed. Otherwise a renamed job would keep firing forever and fail as `Unknown job`.
+- Patterns use `tz: "UTC"`, so "03:00" does not move with the server's time zone or daylight saving time.
+
+The handler is ordinary:
+
+```ts
+"cleanup-expired-refresh-tokens": async () => {
+  const deleted = await refreshTokenRepository.deleteExpired(new Date());
+  logger.info("Expired refresh tokens deleted", { deleted });
+},
+```
+
+Two rules make it safe:
+
+- **Idempotent**: deleting expired rows twice deletes nothing the second time. A retry or an overlapping run is harmless.
+- **Bounded**: `deleteExpired` deletes 1000 rows per statement and loops. One giant `DELETE` on millions of rows would lock the table and lag replicas for minutes. An index on `expires_at` keeps each batch fast.
+
+It also deletes only what is safe: **expired** tokens are already rejected like unknown ones, but **revoked tokens that have not expired** are kept, because they are what detects a stolen token being replayed (chapter 7).
+
+Without `REDIS_URL` there is no worker, so scheduled jobs do not run. For development that is fine: expired tokens only take space.
+
+### Try it
+
+With the worker running, list the schedules and trigger one run now:
+
+```bash
+docker compose exec redis redis-cli ZRANGE bull:jobs:repeat 0 -1 WITHSCORES
+node -e 'const {Queue}=require("bullmq");const q=new Queue("jobs",{connection:{host:"127.0.0.1"}});q.add("cleanup-expired-refresh-tokens",{}).then(()=>q.close())'
+```
+
+The worker logs `Expired refresh tokens deleted` with the count.
+
 ## Common mistakes
 
 - **Doing slow or unreliable work inside the request.** Users wait, and failures of a side task fail the main action.
@@ -325,6 +384,8 @@ Without `REDIS_URL`, you do not need the worker: the same "Email not sent" line 
 - **Retrying forever or without backoff.** That hammers a failing service. Limit attempts and back off.
 - **Failing the user's request because a notification could not be queued.** Decide what is essential and what is best-effort.
 - **Waiting forever on a dead connection in the API.** Guard calls that have no built-in timeout.
+- **Running cron timers inside every API instance.** Schedule through the queue so each tick runs once, with retries.
+- **One huge cleanup statement.** Delete in batches, on an indexed column.
 
 ## Summary
 

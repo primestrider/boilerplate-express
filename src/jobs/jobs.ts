@@ -2,6 +2,7 @@ import { Queue } from "bullmq";
 import type Redis from "ioredis";
 
 import { logger } from "../config/logger";
+import type { RefreshTokenRepository } from "../modules/authentication/refresh-token.repository";
 import type { Mailer, MailMessage } from "../shared/mail/mailer";
 
 /**
@@ -10,9 +11,32 @@ import type { Mailer, MailMessage } from "../shared/mail/mailer";
  */
 export type JobPayloads = {
   "send-email": MailMessage;
+  "cleanup-expired-refresh-tokens": Record<string, never>;
 };
 
 export type JobName = keyof JobPayloads;
+
+type JobSchedule = {
+  [N in JobName]: {
+    name: N;
+    /** Cron expression, evaluated in UTC: "min hour day month weekday". */
+    pattern: string;
+    data: JobPayloads[N];
+  };
+}[JobName];
+
+/**
+ * Recurring jobs. The worker registers them in Redis at startup; BullMQ then
+ * adds one job per tick, however many workers or API instances run, and any
+ * worker picks it up with the usual retries.
+ */
+export const JOB_SCHEDULES: JobSchedule[] = [
+  {
+    name: "cleanup-expired-refresh-tokens",
+    pattern: "0 3 * * *", // daily at 03:00 UTC
+    data: {},
+  },
+];
 
 export type JobHandlers = {
   [N in JobName]: (data: JobPayloads[N]) => Promise<void>;
@@ -29,10 +53,16 @@ export const QUEUE_NAME = "jobs";
 /** What each job does. Used by the worker and by the inline queue. */
 export const createJobHandlers = ({
   mailer,
+  refreshTokenRepository,
 }: {
   mailer: Mailer;
+  refreshTokenRepository: RefreshTokenRepository;
 }): JobHandlers => ({
   "send-email": (message) => mailer.send(message),
+  "cleanup-expired-refresh-tokens": async () => {
+    const deleted = await refreshTokenRepository.deleteExpired(new Date());
+    logger.info("Expired refresh tokens deleted", { deleted });
+  },
 });
 
 export const runHandler = <N extends JobName>(
@@ -68,6 +98,29 @@ export class BullJobQueue implements JobQueue {
     }
 
     await this.queue.add(name, data);
+  }
+
+  /**
+   * Makes the schedules in Redis match `schedules`: upserts each one (safe
+   * when several workers start at once) and removes those no longer listed,
+   * which would otherwise keep firing after being renamed or deleted.
+   * Scheduled jobs get this queue's retry and retention options.
+   */
+  async syncSchedules(schedules: JobSchedule[]): Promise<void> {
+    for (const schedule of schedules) {
+      await this.queue.upsertJobScheduler(
+        schedule.name,
+        { pattern: schedule.pattern, tz: "UTC" },
+        { name: schedule.name, data: schedule.data },
+      );
+    }
+
+    const wanted = new Set<string>(schedules.map((schedule) => schedule.name));
+    for (const existing of await this.queue.getJobSchedulers()) {
+      if (!wanted.has(existing.key)) {
+        await this.queue.removeJobScheduler(existing.key);
+      }
+    }
   }
 
   /** Closes the queue; the shared connection is closed by its owner. */

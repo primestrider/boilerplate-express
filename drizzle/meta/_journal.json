@@ -8,6 +8,13 @@
       "when": 1791261278346,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1791344889814,
+      "tag": "0001_refresh_tokens_expires_at_idx",
+      "breakpoints": true
     }
   ]
 }
