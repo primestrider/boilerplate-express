@@ -48,6 +48,16 @@ REST API boilerplate built with **Express 5 + TypeScript + Drizzle ORM (MySQL vi
 - **Tests**: Vitest + Supertest integration tests against real MySQL (one database per test worker), unit tests with fakes, and Redis tests when `TEST_REDIS_URL` is set
 - **Tooling**: ESLint (typescript-eslint) + Prettier, LF line endings, GitHub Actions CI on Node 22 and 24 with MySQL and Redis service containers, plus a Docker build check
 
+## Starting a New Project
+
+To use this boilerplate as the base of your own project, run this once after cloning and `npm install`:
+
+```bash
+npm run init-project -- my-api --description "What my API does" --reset-git
+```
+
+It deletes the learning guide (`learn/`), renames the project everywhere (package, logs, API docs, CI, mail sender), resets the package version and author, removes this section, and with `--reset-git` replaces the boilerplate's git history with a single initial commit. It refuses to run on uncommitted changes, so without `--reset-git` you can undo it with `git checkout . && git clean -fd`.
+
 ## Prerequisites
 
 - Node.js 22.12+ (see `engines`; tested on Node 24, `.nvmrc` pins 24)

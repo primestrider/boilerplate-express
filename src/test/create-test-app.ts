@@ -81,7 +81,7 @@ export const createTestApp = async (config: Partial<Env> = {}) => {
 
   const jobQueue = new RecordingJobQueue();
   const storage = new LocalFileStorage(
-    mkdtempSync(path.join(tmpdir(), "boilerplate-uploads-")),
+    mkdtempSync(path.join(tmpdir(), "test-uploads-")),
   );
 
   const app = createApp({

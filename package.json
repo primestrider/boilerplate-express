@@ -22,7 +22,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "worker": "tsx watch src/worker.ts",
-    "start:worker": "node dist/worker.js"
+    "start:worker": "node dist/worker.js",
+    "init-project": "tsx src/cli/init-project.ts"
   },
   "dependencies": {
     "argon2": "^0.45.1",
